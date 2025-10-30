@@ -139,17 +139,12 @@ class WriteFileInput(BaseModel):
 
 
 
-
-
-def write_file(path: str, content: str) -> str:
+def _write_file(path: str, content: str) -> str:
     """Write content to a file safely inside the project root."""
-    from agent.tools import safe_path_for_project  # avoid circular import
     file_path = safe_path_for_project(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(content, encoding="utf-8")
     return f"Wrote file: {file_path}"
-
-
 
 write_file = StructuredTool(
     name="write_file",
