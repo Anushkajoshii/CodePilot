@@ -8,18 +8,46 @@ from pathlib import Path
 
 from agent.graph import build_agent, init_project_root
 
+import io
+import zipfile
 
-def zip_project_folder(project_path: str):
-    """Create a ZIP file of the given project folder and return its path."""
-    project_dir = Path(project_path)
-    if not project_dir.exists():
-        st.warning("⚠️ No project generated yet.")
-        return None
+# -------------------------------
+# Create ZIP for Download (in-memory)
+# -------------------------------
+st.info("📦 Packaging your project files...")
 
-    temp_dir = tempfile.mkdtemp()
-    zip_path = os.path.join(temp_dir, f"{project_dir.name}.zip")
-    shutil.make_archive(zip_path.replace(".zip", ""), "zip", project_dir)
-    return zip_path
+buffer = io.BytesIO()
+project_dir = Path(project_path)
+
+if project_dir.exists():
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in project_dir.rglob("*"):
+            if file_path.is_file():
+                zf.write(file_path, file_path.relative_to(project_dir))
+    buffer.seek(0)
+
+    st.download_button(
+        label="⬇️ Download Project ZIP",
+        data=buffer,
+        file_name=f"{project_dir.name}.zip",
+        mime="application/zip",
+        use_container_width=True,
+    )
+    st.success("Your project is ready to download!")
+else:
+    st.warning("⚠️ No project files found to zip.")
+
+# def zip_project_folder(project_path: str):
+#     """Create a ZIP file of the given project folder and return its path."""
+#     project_dir = Path(project_path)
+#     if not project_dir.exists():
+#         st.warning("⚠️ No project generated yet.")
+#         return None
+
+#     temp_dir = tempfile.mkdtemp()
+#     zip_path = os.path.join(temp_dir, f"{project_dir.name}.zip")
+#     shutil.make_archive(zip_path.replace(".zip", ""), "zip", project_dir)
+#     return zip_path
 
 
 def main():
