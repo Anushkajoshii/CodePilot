@@ -1,0 +1,154 @@
+/*
+  Calculator Styles
+  -----------------
+  This stylesheet defines a responsive, accessible UI for the simple calculator.
+  It uses CSS custom properties for easy theming and adjusts layout via Flexbox
+  and CSS Grid.
+*/
+
+/* Global box‑sizing */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Root variables – colours, spacing, font sizes */
+:root {
+  /* Colours */
+  --color-bg: #f5f5f5;
+  --color-primary: #2c3e50;
+  --color-secondary: #34495e;
+  --color-display-bg: #ffffff;
+  --color-display-text: #000000;
+  --color-btn-digit-bg: #e0e0e0;
+  --color-btn-digit-text: #000000;
+  --color-btn-operator-bg: #ff9500;
+  --color-btn-operator-text: #ffffff;
+  --color-btn-action-bg: #d9534f;
+  --color-btn-action-text: #ffffff;
+  --color-btn-hover: rgba(0, 0, 0, 0.1);
+  --color-btn-active: rgba(0, 0, 0, 0.2);
+
+  /* Spacing */
+  --gap: 0.5rem;
+  --padding-display: 0.75rem;
+  --padding-btn: 0.75rem;
+
+  /* Font sizes */
+  --font-base: 1rem;
+  --font-display: 2rem;
+  --font-btn: 1.25rem;
+
+  /* Other */
+  --border-radius: 0.4rem;
+  --max-width: 400px;
+}
+
+/* Body – centre the calculator */
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: var(--font-base);
+  color: var(--color-primary);
+}
+
+/* Calculator container */
+.calculator {
+  width: 100%;
+  max-width: var(--max-width);
+  background: var(--color-secondary);
+  border-radius: var(--border-radius);
+  padding: var(--gap);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Display */
+.calculator-display {
+  background: var(--color-display-bg);
+  color: var(--color-display-text);
+  font-size: var(--font-display);
+  text-align: right;
+  padding: var(--padding-display);
+  border-radius: var(--border-radius);
+  overflow-x: auto;
+  white-space: nowrap;
+  /* hide scrollbar on WebKit */
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;     /* Firefox */
+}
+.calculator-display::-webkit-scrollbar {
+  display: none;
+}
+
+/* Buttons container – CSS Grid */
+.calculator-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gap);
+  margin-top: var(--gap);
+}
+
+/* Base button style */
+.btn {
+  font-size: var(--font-btn);
+  padding: var(--padding-btn);
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+  user-select: none;
+}
+
+/* Modifier: digit */
+.btn-digit {
+  background: var(--color-btn-digit-bg);
+  color: var(--color-btn-digit-text);
+}
+
+/* Modifier: operator */
+.btn-operator {
+  background: var(--color-btn-operator-bg);
+  color: var(--color-btn-operator-text);
+}
+
+/* Modifier: action (clear, backspace, equals) */
+.btn-action {
+  background: var(--color-btn-action-bg);
+  color: var(--color-btn-action-text);
+}
+
+/* Hover & focus states */
+.btn:hover,
+.btn:focus {
+  background: var(--color-btn-hover);
+}
+
+/* Active (pressed) state */
+.btn:active {
+  background: var(--color-btn-active);
+  transform: scale(0.97);
+}
+
+/* Ensure the zero button spans two columns – already set inline, but we keep a helper */
+.btn-zero {
+  grid-column: span 2;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  :root {
+    --gap: 0.35rem;
+    --padding-display: 0.5rem;
+    --padding-btn: 0.5rem;
+    --font-display: 1.5rem;
+    --font-btn: 1rem;
+  }
+
+  .calculator {
+    padding: var(--gap);
+  }
+}

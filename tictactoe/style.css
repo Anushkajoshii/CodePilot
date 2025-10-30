@@ -1,0 +1,175 @@
+/*
+ * Tic Tac Toe UI Styling
+ * -------------------------------------------------
+ * This stylesheet defines the visual appearance of the Tic Tac Toe
+ * game. It establishes a set of CSS custom properties (variables) for
+ * colors, provides layout for the container and board, and adds
+ * interactive styling for cells and the reset button.
+ */
+
+/* -------------------------------------------------
+ * Root variables – colour palette
+ * ------------------------------------------------- */
+:root {
+    /* Page background */
+    --bg: #f0f4f8;
+    /* Board background (optional) */
+    --board-bg: #ffffff;
+    /* Colour for X marks */
+    --x-color: #2196F3;   /* blue */
+    /* Colour for O marks */
+    --o-color: #F44336;   /* red */
+    /* Accent colour for hover/focus states */
+    --accent: #457b9d;
+}
+
+/* -------------------------------------------------
+ * Global resets & base styling
+ * ------------------------------------------------- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: var(--bg);
+    color: #333;
+}
+
+/* -------------------------------------------------
+ * Game container – centre the content
+ * ------------------------------------------------- */
+.game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+    text-align: center;
+}
+
+/* -------------------------------------------------
+ * Typography – heading and status message
+ * ------------------------------------------------- */
+h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    color: #1d3557;
+}
+
+#status {
+    font-size: 1.2rem;
+    margin-bottom: 1.5rem;
+    min-height: 1.5rem; /* keep space even when text changes */
+}
+
+/* -------------------------------------------------
+ * Board – 3x3 grid layout
+ * ------------------------------------------------- */
+.board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    width: 100%;
+    max-width: 400px; /* restrict board size on larger screens */
+    background-color: var(--board-bg);
+}
+
+/* -------------------------------------------------
+ * Individual cell styling (square buttons)
+ * ------------------------------------------------- */
+.cell {
+    /* Square shape using width + padding‑top trick */
+    width: 100%;
+    padding-top: 100%;
+    position: relative; /* for inner content positioning */
+    background-color: #fff;
+    font-size: 2.5rem;
+    font-weight: bold;
+    cursor: pointer;
+    /* Remove default button appearance */
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    border: none;
+    /* Custom border */
+    border: 2px solid #444;
+    /* Center the symbol */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+/* Ensure the text sits in the centre despite the padding‑top trick */
+.cell > * {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Hover / focus effects for empty cells (script can add data-filled="true" when occupied) */
+.cell[data-filled="false"]:hover,
+.cell[data-filled="false"]:focus {
+    background-color: #e9ecef;
+    transform: scale(1.03);
+}
+
+/* X and O specific colour classes */
+.cell.X {
+    color: var(--x-color);
+}
+
+.cell.O {
+    color: var(--o-color);
+}
+
+/* -------------------------------------------------
+ * Reset button styling
+ * ------------------------------------------------- */
+.reset-button {
+    margin-top: 1.5rem;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    border: 2px solid var(--accent);
+    background-color: #fff;
+    color: #333;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.reset-button:hover,
+.reset-button:focus {
+    background-color: var(--accent);
+    color: #fff;
+    outline: none;
+}
+
+/* -------------------------------------------------
+ * Responsive adjustments for small screens
+ * ------------------------------------------------- */
+@media (max-width: 600px) {
+    h1 {
+        font-size: 2rem;
+    }
+    #status {
+        font-size: 1rem;
+    }
+    .board {
+        max-width: 300px;
+    }
+    .cell {
+        font-size: 2rem;
+    }
+    .reset-button {
+        font-size: 0.9rem;
+        padding: 0.6rem 1.2rem;
+    }
+}

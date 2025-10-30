@@ -1,0 +1,265 @@
+/*
+  ColorfulTodo – Visual Design System
+  ---------------------------------
+  This stylesheet defines:
+    • CSS custom properties for light and dark color palettes.
+    • A `.dark-mode` class that swaps the palette variables.
+    • Responsive layout using CSS Grid and Flexbox.
+    • Colorful task‑item styles with hover and drag‑and‑drop cues.
+    • `.completed` styling.
+    • Media queries for mobile devices.
+*/
+
+/* -------------------------------------------------------------------------- */
+/* 1. Color palette – light theme (default) */
+/* -------------------------------------------------------------------------- */
+:root {
+  /* Primary accent colors */
+  --primary-light: #ff6f61;   /* coral */
+  --primary-dark: #ffb74d;    /* amber */
+
+  /* Background & text */
+  --bg-light: #f5f5f5;        /* light gray */
+  --bg-dark: #212121;         /* dark gray */
+  --text-light: #212121;      /* dark text for light bg */
+  --text-dark: #f5f5f5;       /* light text for dark bg */
+
+  /* Additional hues for task cards – a small rainbow */
+  --task-hue-1: 200;   /* blue */
+  --task-hue-2: 120;   /* green */
+  --task-hue-3: 45;    /* orange */
+  --task-hue-4: 300;   /* purple */
+  --task-hue-5: 10;    /* red */
+}
+
+/* -------------------------------------------------------------------------- */
+/* 2. Dark mode – overrides */
+/* -------------------------------------------------------------------------- */
+body.dark-mode {
+  --bg-light: #212121;        /* dark background */
+  --bg-dark: #f5f5f5;         /* light background for cards */
+  --text-light: #f5f5f5;      /* light text on dark bg */
+  --text-dark: #212121;       /* dark text on light cards */
+}
+
+/* -------------------------------------------------------------------------- */
+/* 3. Global reset & base styles */
+/* -------------------------------------------------------------------------- */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-light);
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto; /* header, input, list, footer */
+  gap: 1rem;
+  padding: 1rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 4. Layout components */
+/* -------------------------------------------------------------------------- */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.8rem;
+}
+
+#task-input {
+  display: flex;
+  gap: 0.5rem;
+}
+
+#task-input input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--primary-light);
+  border-radius: 4px;
+  background: var(--bg-dark);
+  color: var(--text-dark);
+}
+
+#task-input button {
+  padding: 0.5rem 1rem;
+  background: var(--primary-light);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+#task-input button:hover {
+  background: var(--primary-dark);
+}
+
+/* Task list */
+.task-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: hsl(var(--task-hue-1), 70%, 85%);
+  border-left: 6px solid hsl(var(--task-hue-1), 70%, 55%);
+  transition: transform 0.1s, background 0.2s, box-shadow 0.2s;
+}
+
+/* Cycle background hues for successive items using nth-child */
+.task-item:nth-child(5n+1) { background: hsl(var(--task-hue-1), 70%, 85%); border-left-color: hsl(var(--task-hue-1), 70%, 55%); }
+.task-item:nth-child(5n+2) { background: hsl(var(--task-hue-2), 70%, 85%); border-left-color: hsl(var(--task-hue-2), 70%, 55%); }
+.task-item:nth-child(5n+3) { background: hsl(var(--task-hue-3), 70%, 85%); border-left-color: hsl(var(--task-hue-3), 70%, 55%); }
+.task-item:nth-child(5n+4) { background: hsl(var(--task-hue-4), 70%, 85%); border-left-color: hsl(var(--task-hue-4), 70%, 55%); }
+.task-item:nth-child(5n)   { background: hsl(var(--task-hue-5), 70%, 85%); border-left-color: hsl(var(--task-hue-5), 70%, 55%); }
+
+.task-item:hover {
+  background: hsl(var(--task-hue-1), 70%, 80%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.task-item .task-text {
+  flex: 1;
+  margin: 0 0.5rem;
+}
+
+.task-item button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: var(--text-light);
+}
+
+/* Completed task styling */
+.completed {
+  text-decoration: line-through;
+  opacity: 0.6;
+  background: var(--bg-dark) !important; /* keep contrast in both themes */
+  border-left-color: transparent !important;
+}
+
+/* Drag‑and‑drop cues */
+.dragging {
+  opacity: 0.5;
+}
+
+.placeholder {
+  border: 2px dashed var(--primary-light);
+  background: transparent;
+  min-height: 2.5rem;
+}
+
+/* Footer */
+footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+footer .filters {
+  display: flex;
+  gap: 0.5rem;
+}
+
+footer .filters button {
+  background: transparent;
+  border: 1px solid var(--primary-light);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+footer .filters button[aria-pressed="true"] {
+  background: var(--primary-light);
+  color: #fff;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 5. Dark mode overrides for components */
+/* -------------------------------------------------------------------------- */
+body.dark-mode header,
+body.dark-mode footer {
+  color: var(--text-dark);
+}
+
+body.dark-mode #task-input input {
+  background: var(--bg-dark);
+  color: var(--text-dark);
+  border-color: var(--primary-dark);
+}
+
+body.dark-mode #task-input button {
+  background: var(--primary-dark);
+}
+
+body.dark-mode #task-input button:hover {
+  background: var(--primary-light);
+}
+
+body.dark-mode .task-item {
+  color: var(--text-dark);
+}
+
+body.dark-mode .task-item button {
+  color: var(--text-dark);
+}
+
+body.dark-mode .completed {
+  background: var(--bg-light) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 6. Responsive adjustments */
+/* -------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+  body {
+    padding: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  header {
+    font-size: 1.5rem;
+  }
+
+  #task-input input,
+  #task-input button {
+    font-size: 0.9rem;
+  }
+
+  .task-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .task-item button {
+    align-self: flex-end;
+  }
+
+  footer {
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+  }
+}

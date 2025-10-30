@@ -1,0 +1,210 @@
+/*
+ * SketchPad – styles.css
+ * --------------------------------------------------
+ * This stylesheet defines a responsive layout for the SketchPad
+ * application. It centers the toolbar and canvas, provides a light
+ * and dark theme fallback, and adds accessible hover/focus styles.
+ */
+
+/* --------------------------------------------------
+ * CSS Custom Properties – Light Theme (default)
+ * -------------------------------------------------- */
+:root {
+    /* Core palette */
+    --bg-color: #f5f5f5;
+    --toolbar-bg: #ffffff;
+    --toolbar-border: #e0e0e0;
+    --button-bg: #e0e0e0;
+    --button-color: #000000;
+    --button-hover-bg: #d5d5d5;
+    --button-active-bg: #c0c0c0;
+    --button-border: #b0b0b0;
+    --canvas-border: #cccccc;
+    --color-swatch-size: 30px;
+    --color-swatch-border: #999999;
+    --color-swatch-selected-outline: 3px solid #ff9800;
+}
+
+/* --------------------------------------------------
+ * Dark Theme – prefers-color-scheme
+ * -------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-color: #212121;
+        --toolbar-bg: #2c2c2c;
+        --toolbar-border: #444444;
+        --button-bg: #3a3a3a;
+        --button-color: #eeeeee;
+        --button-hover-bg: #4a4a4a;
+        --button-active-bg: #5a5a5a;
+        --button-border: #555555;
+        --canvas-border: #555555;
+        --color-swatch-border: #777777;
+        --color-swatch-selected-outline: 3px solid #ffb74d;
+    }
+}
+
+/* --------------------------------------------------
+ * Global Reset & Base Styles
+ * -------------------------------------------------- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    font-family: Arial, Helvetica, sans-serif;
+    background: var(--bg-color);
+    color: var(--button-color);
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+/* --------------------------------------------------
+ * Toolbar Layout – Flexbox
+ * -------------------------------------------------- */
+#toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    background: var(--toolbar-bg);
+    border: 1px solid var(--toolbar-border);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    gap: 1rem;
+    width: 100%;
+    max-width: 900px;
+}
+
+/* Horizontal layout for desktop */
+#toolbar > div {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* --------------------------------------------------
+ * Mobile – vertical collapse
+ * -------------------------------------------------- */
+@media (max-width: 600px) {
+    #toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    #toolbar > div {
+        justify-content: space-between;
+        width: 100%;
+    }
+    #toolButtons {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
+
+/* --------------------------------------------------
+ * Color Palette – Swatches
+ * -------------------------------------------------- */
+.color-swatch {
+    width: var(--color-swatch-size);
+    height: var(--color-swatch-size);
+    border: 2px solid var(--color-swatch-border);
+    border-radius: 4px;
+    cursor: pointer;
+    outline: none;
+    padding: 0;
+    background-clip: padding-box;
+}
+
+.color-swatch.selected {
+    outline: var(--color-swatch-selected-outline);
+}
+
+/* Ensure the native color input blends with the theme */
+#customColorPicker {
+    width: var(--color-swatch-size);
+    height: var(--color-swatch-size);
+    padding: 0;
+    border: 2px solid var(--color-swatch-border);
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+}
+
+/* --------------------------------------------------
+ * Pen Controls – Slider & Label
+ * -------------------------------------------------- */
+#penControls label {
+    font-size: 0.9rem;
+    margin-right: 0.5rem;
+}
+
+#penSize {
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+/* --------------------------------------------------
+ * Tool Buttons
+ * -------------------------------------------------- */
+#toolButtons button {
+    background: var(--button-bg);
+    color: var(--button-color);
+    border: 1px solid var(--button-border);
+    border-radius: 4px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.1s ease;
+}
+
+#toolButtons button:hover,
+#toolButtons button:focus {
+    background: var(--button-hover-bg);
+    outline: none;
+}
+
+#toolButtons button:active {
+    background: var(--button-active-bg);
+    transform: translateY(1px);
+}
+
+/* --------------------------------------------------
+ * Canvas Styling – responsive scaling
+ * -------------------------------------------------- */
+#drawingCanvas {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--canvas-border);
+    background: #ffffff;
+    border-radius: 4px;
+    /* Ensure the canvas keeps its intrinsic aspect ratio when scaled */
+    width: 800px; /* fallback for large screens */
+    height: 600px; /* fallback for large screens */
+}
+
+/* Scale canvas down on very small viewports */
+@media (max-width: 500px) {
+    #drawingCanvas {
+        width: 100%;
+        height: auto; /* height will follow aspect ratio via the intrinsic size */
+    }
+}
+
+/* --------------------------------------------------
+ * Accessibility – focus-visible
+ * -------------------------------------------------- */
+button:focus-visible,
+input:focus-visible {
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
+}

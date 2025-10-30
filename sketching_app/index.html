@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SketchPad</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="toolbar">
+        <!-- Color palette -->
+        <div id="colorPalette">
+            <button class="color-swatch" data-color="#000000" style="background:#000000;"></button>
+            <button class="color-swatch" data-color="#ff0000" style="background:#ff0000;"></button>
+            <button class="color-swatch" data-color="#00ff00" style="background:#00ff00;"></button>
+            <button class="color-swatch" data-color="#0000ff" style="background:#0000ff;"></button>
+            <input type="color" id="customColorPicker" value="#000000">
+        </div>
+        <!-- Pen thickness -->
+        <div id="penControls">
+            <label for="penSize">Pen Size: <span id="penSizeLabel">5</span></label>
+            <input type="range" id="penSize" min="1" max="30" value="5">
+        </div>
+        <!-- Tool buttons -->
+        <div id="toolButtons">
+            <button id="penBtn">Pen</button>
+            <button id="eraserBtn">Eraser</button>
+            <button id="clearBtn">Clear</button>
+            <button id="undoBtn">Undo</button>
+            <button id="redoBtn">Redo</button>
+            <button id="downloadBtn">Download</button>
+        </div>
+    </div>
+    <canvas id="drawingCanvas" width="800" height="600"></canvas>
+    <script src="app.js" defer></script>
+</body>
+</html>
