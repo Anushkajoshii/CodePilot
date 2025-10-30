@@ -140,7 +140,7 @@ class WriteFileInput(BaseModel):
 
 
 
-@tool
+
 def write_file(path: str, content: str) -> str:
     """Write content to a file safely inside the project root."""
     from agent.tools import safe_path_for_project  # avoid circular import
@@ -165,7 +165,7 @@ write_file = StructuredTool(
 class ReadFileInput(BaseModel):
     path: str = Field(..., description="Path of file to read relative to project root.")
 
-@tool
+
 def _read_file(path: str) -> str:
     file_path = safe_path_for_project(path)
     if not file_path.exists():
@@ -187,7 +187,7 @@ read_file = StructuredTool(
 class ListFilesInput(BaseModel):
     path: str = Field(default=".", description="Path relative to project root to list files from.")
 
-@tool
+
 def _list_files(path: str = ".") -> str:
     p = safe_path_for_project(path)
     if not p.exists():
@@ -209,7 +209,7 @@ list_files = StructuredTool(
 # ------------------------------------------------------------------
 # Tool 4: Get Current Directory
 # ------------------------------------------------------------------
-@tool
+
 def _get_current_directory() -> str:
     return str(PROJECT_ROOT.resolve())
 
@@ -227,7 +227,7 @@ get_current_directory = StructuredTool.from_function(
 class RunCommandInput(BaseModel):
     command: str = Field(..., description="Shell command to execute inside the project root.")
 
-@tool
+
 def _run_command(command: str) -> str:
     try:
         result = subprocess.run(command, shell=True, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=60)
