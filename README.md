@@ -15,7 +15,7 @@ CodePilot uses a **multi-agent architecture** to simulate real-world software de
 - **💻 Coder Agent** — Implements those tasks, writes code files, and executes necessary commands to assemble the project.  
 
 <div align="center">
-  <img src="resources/codepilot_diagram.png" width="90%"/>
+  <img src="codepilot_diagram.png" width="90%"/>
 </div>
 
 
