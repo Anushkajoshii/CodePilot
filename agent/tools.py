@@ -162,9 +162,17 @@ def _get_current_directory() -> str:
     return str(PROJECT_ROOT)
 
 
+
+# ✅ Define a Pydantic schema to lock the argument name
+class ListFilesInput(BaseModel):
+    path: str = Field(default=".", description="Path inside the project directory to list files from.")
+
+
 def _list_files(path: str = ".") -> str:
-    """Lists all files in the specified directory within the project root."""
+    """Lists all files within the project root directory."""
     p = safe_path_for_project(path)
+    if not p.exists():
+        return f"ERROR: Path {path} does not exist"
     if not p.is_dir():
         return f"ERROR: {p} is not a directory"
     files = [str(f.relative_to(PROJECT_ROOT)) for f in p.glob("**/*") if f.is_file()]
@@ -212,11 +220,13 @@ get_current_directory = StructuredTool.from_function(
     description="Return the current project root path."
 )
 
-list_files = StructuredTool.from_function(
-    _list_files,
+list_files = StructuredTool(
     name="list_files",
     description="List all files inside the project directory.",
+    func=_list_files,
+    args_schema=ListFilesInput,  # ✅ Explicit schema binding
 )
+
 
 run_cmd = StructuredTool.from_function(
     _run_cmd,
