@@ -162,12 +162,16 @@ def _get_current_directory() -> str:
     return str(PROJECT_ROOT)
 
 
-def _list_files(directory: str = ".") -> str:
-    p = safe_path_for_project(directory)
+def _list_files(path: str = ".") -> str:
+    """Lists all files in the specified directory within the project root."""
+    p = safe_path_for_project(path)
     if not p.is_dir():
         return f"ERROR: {p} is not a directory"
     files = [str(f.relative_to(PROJECT_ROOT)) for f in p.glob("**/*") if f.is_file()]
     return "\n".join(files) if files else "No files found."
+
+
+
 
 
 def _run_cmd(cmd: str, cwd: str = None, timeout: int = 30) -> Tuple[int, str, str]:
@@ -211,7 +215,7 @@ get_current_directory = StructuredTool.from_function(
 list_files = StructuredTool.from_function(
     _list_files,
     name="list_files",
-    description="List all files inside the project directory."
+    description="List all files inside the project directory.",
 )
 
 run_cmd = StructuredTool.from_function(
