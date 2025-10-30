@@ -90,10 +90,16 @@
 #     return str(PROJECT_ROOT)
 
 
-from langchain.tools import StructuredTool
-from pydantic import BaseModel, Field
 import pathlib
 import subprocess
+from pydantic import BaseModel, Field
+
+# ✅ Import StructuredTool safely for both environments
+try:
+    from langchain_core.tools import StructuredTool
+except ImportError:
+    from langchain.tools import StructuredTool
+
 
 PROJECT_ROOT = pathlib.Path.cwd() / "generated_project"
 
@@ -154,7 +160,7 @@ read_file = StructuredTool(
 
 
 # ------------------------------------------------------------------
-# Tool 3: List Files  ✅ FIXED SCHEMA
+# Tool 3: List Files (✅ FIXED SCHEMA)
 # ------------------------------------------------------------------
 class ListFilesInput(BaseModel):
     path: str = Field(default=".", description="Path relative to project root to list files from.")
@@ -174,7 +180,7 @@ list_files = StructuredTool(
     name="list_files",
     description="List all files inside the project folder.",
     func=_list_files,
-    args_schema=ListFilesInput,  # ✅ fixes the '__arg1' error
+    args_schema=ListFilesInput,
 )
 
 
@@ -186,9 +192,9 @@ def _get_current_directory() -> str:
 
 
 get_current_directory = StructuredTool.from_function(
+    func=_get_current_directory,
     name="get_current_directory",
     description="Return the current working directory for the project.",
-    func=_get_current_directory,
 )
 
 
