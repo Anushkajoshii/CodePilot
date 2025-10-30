@@ -101,17 +101,33 @@ except ImportError:
     from langchain.tools import StructuredTool
 
 
-PROJECT_ROOT = pathlib.Path.cwd() / "generated_project"
+PROJECT_ROOT: pathlib.Path | None = None
+
+def set_project_root(root: pathlib.Path):
+    """Allow external modules (like graph.py) to set the global project root."""
+    global PROJECT_ROOT
+    PROJECT_ROOT = root.resolve()
+    PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
+
 
 
 # ------------------------------------------------------------------
 # Utility: Safe path handling
 # ------------------------------------------------------------------
 def safe_path_for_project(path: str) -> pathlib.Path:
-    p = (PROJECT_ROOT / path).resolve()
-    if PROJECT_ROOT.resolve() not in p.parents and PROJECT_ROOT.resolve() != p.parent and PROJECT_ROOT.resolve() != p:
-        raise ValueError("Attempt to write outside project root")
+    if PROJECT_ROOT is None:
+        raise RuntimeError("PROJECT_ROOT not initialized — call set_project_root() first.")
+
+    p = pathlib.Path(path).expanduser()
+    if not p.is_absolute():
+        p = (PROJECT_ROOT / p).resolve()
+
+    project_root_resolved = PROJECT_ROOT.resolve()
+    if not str(p).startswith(str(project_root_resolved)):
+        raise ValueError(f"Attempt to access path outside project root: {p}")
+
     return p
+
 
 
 # ------------------------------------------------------------------
