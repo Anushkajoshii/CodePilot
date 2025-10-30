@@ -139,7 +139,7 @@ class WriteFileInput(BaseModel):
 
 
 
-def _write_file(path: str, content: str) -> str:
+def write_file(path: str, content: str) -> str:
     """Write content to a file safely inside the project root."""
     file_path = safe_path_for_project(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,7 +161,7 @@ class ReadFileInput(BaseModel):
     path: str = Field(..., description="Path of file to read relative to project root.")
 
 
-def _read_file(path: str) -> str:
+def read_file(path: str) -> str:
     file_path = safe_path_for_project(path)
     if not file_path.exists():
         return f"❌ File not found: {path}"
@@ -183,7 +183,7 @@ class ListFilesInput(BaseModel):
     path: str = Field(default=".", description="Path relative to project root to list files from.")
 
 
-def _list_files(path: str = ".") -> str:
+def list_files(path: str = ".") -> str:
     p = safe_path_for_project(path)
     if not p.exists():
         return f"❌ Path not found: {path}"
@@ -205,7 +205,7 @@ list_files = StructuredTool(
 # Tool 4: Get Current Directory
 # ------------------------------------------------------------------
 
-def _get_current_directory() -> str:
+def get_current_directory() -> str:
     return str(PROJECT_ROOT.resolve())
 
 
@@ -223,7 +223,7 @@ class RunCommandInput(BaseModel):
     command: str = Field(..., description="Shell command to execute inside the project root.")
 
 
-def _run_command(command: str) -> str:
+def run_command(command: str) -> str:
     try:
         result = subprocess.run(command, shell=True, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=60)
         return result.stdout or result.stderr or "✅ Command executed successfully (no output)."
