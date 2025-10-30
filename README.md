@@ -51,18 +51,19 @@ Before running CodePilot, ensure you have:
 git clone https://github.com/Anushkajoshii/CodePilot.git
 cd CodePilot
 ```
-# Create and activate a virtual environment
+### Create and activate a virtual environment
+``` bash
 python -m venv .venv
 source .venv/bin/activate
+```
 
-# Install dependencies
+### Install dependencies
+``` bash
 pip install -r requirements.txt
+```
 
-# (Optional) Create a .env file
-cp .sample_env .env
-# Fill in your GROQ_API_KEY and other settings
 
-## ▶️ Run Locally
+### ▶️ Run Locally
 
 ### 🖥️ Streamlit UI (Recommended)
 
