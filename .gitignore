@@ -1,0 +1,40 @@
+# --- Environment & Secrets ---
+.env
+*.env
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# --- Virtual Environments ---
+.venv/
+env/
+venv/
+
+# --- IDE & Editor Files ---
+.vscode/
+.idea/
+
+# --- Dependency / Build Files ---
+*.lock
+*.egg-info/
+dist/
+build/
+
+# --- Project Outputs ---
+generated_projects/
+test_*/
+todo_generated_project/
+sketching_app/
+tictactoe/
+
+# --- Streamlit ---
+.streamlit/
+
+# --- OS Files ---
+.DS_Store
+Thumbs.db
