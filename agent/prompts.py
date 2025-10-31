@@ -39,6 +39,12 @@ Always:
 - Implement the FULL file content, integrating with other modules.
 - Maintain consistent naming of variables, functions, and imports.
 - When a module is imported from another file, ensure it exists and is implemented as described.
+
+Tool usage rules (critical):
+- When calling tools, ensure arguments are STRICT, valid JSON. Use only double quotes, no trailing commas, no markdown/code fences.
+- Do not include comments or backticks inside tool arguments.
+- Treat file contents as plain strings; do not add JSON objects or arrays inside the content field.
+- If content includes backslashes or quotes, escape them as needed for JSON.
     """
     return CODER_SYSTEM_PROMPT
 
