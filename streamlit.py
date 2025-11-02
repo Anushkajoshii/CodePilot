@@ -115,94 +115,131 @@ def main():
 
     # ---------------- Custom Styling ----------------
     st.markdown("""
-        <style>
-        html, body {
-            font-family: 'Inter', 'Segoe UI', sans-serif;
-            background: var(--background);
-            color: var(--text);
-        }
+<style>
+:root {
+    --bg-light: #f6f5f2;
+    --bg-dark: #121416;
+    --card-light: #ffffff;
+    --card-dark: #1b1d22;
+    --text-light: #2b2b2b;
+    --text-dark: #e6e6e6;
+    --accent: #bfa76f;
+    --accent-hover: #a6905d;
+    --border-light: #d9d9d9;
+    --border-dark: #2d2f33;
+    --input-light: #f1f1ef;
+    --input-dark: #24272c;
+}
 
-        :root {
-            --background: #f8f8f8;
-            --card-bg: #ffffff;
-            --text: #222;
-            --accent: #b6a268;
-            --accent-hover: #9f8c56;
-            --border: #ddd;
-        }
+/* Light / Dark adaptive background */
+html, body {
+    background-color: var(--bg-light);
+    color: var(--text-light);
+}
 
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --background: #0f1115;
-                --card-bg: #181a1f;
-                --text: #f5f5f5;
-                --accent: #c0aa70;
-                --accent-hover: #ad965c;
-                --border: #2c2c2c;
-            }
-        }
+@media (prefers-color-scheme: dark) {
+    html, body {
+        background-color: var(--bg-dark);
+        color: var(--text-dark);
+    }
+}
 
-        .title {
-            font-size: 2.8em;
-            text-align: center;
-            color: var(--accent);
-            font-weight: 800;
-            margin-bottom: 0.1em;
-            letter-spacing: 0.5px;
-        }
+/* Title + subtitles */
+.title {
+    text-align: center;
+    font-weight: 800;
+    font-size: 3em;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, #c8b56b, #bfa76f, #a8915a);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.1em;
+    text-shadow: 0px 1px 2px rgba(0,0,0,0.15);
+}
+@media (prefers-color-scheme: dark) {
+    .title {
+        background: linear-gradient(90deg, #d4c27c, #bfa76f, #a88f55);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+}
 
-        .subtitle {
-            text-align: center;
-            color: var(--text);
-            font-size: 1.1em;
-            opacity: 0.8;
-        }
+.subtitle {
+    text-align: center;
+    opacity: 0.85;
+    font-size: 1.1em;
+}
+.muted {
+    text-align: center;
+    color: var(--accent);
+    font-size: 1rem;
+    margin-bottom: 1.2rem;
+}
 
-        .muted {
-            text-align: center;
-            color: var(--accent);
-            font-size: 1rem;
-            margin-top: 0.2em;
-            margin-bottom: 1rem;
-            opacity: 0.9;
-        }
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: var(--card-light);
+    color: var(--text-light);
+    border-right: 1px solid var(--border-light);
+}
+@media (prefers-color-scheme: dark) {
+    [data-testid="stSidebar"] {
+        background-color: var(--card-dark);
+        color: var(--text-dark);
+        border-right: 1px solid var(--border-dark);
+    }
+}
 
-        [data-testid="stSidebar"] {
-            background-color: var(--card-bg);
-            color: var(--text);
-            border-right: 1px solid var(--border);
-        }
+/* Input + Text Area */
+textarea, input, select, .stTextArea textarea {
+    background-color: var(--input-light) !important;
+    color: var(--text-light) !important;
+    border: 1px solid var(--border-light) !important;
+    border-radius: 10px !important;
+    padding: 10px !important;
+}
+@media (prefers-color-scheme: dark) {
+    textarea, input, select, .stTextArea textarea {
+        background-color: var(--input-dark) !important;
+        color: var(--text-dark) !important;
+        border: 1px solid var(--border-dark) !important;
+    }
+}
+textarea:focus, input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 6px rgba(191,167,111,0.35) !important;
+}
 
-        .stButton>button {
-            background-color: var(--accent);
-            color: #fff;
-            border: none;
-            border-radius: 10px;
-            height: 3em;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        .stButton>button:hover {
-            background-color: var(--accent-hover);
-            transform: scale(1.03);
-        }
+/* Buttons */
+.stButton>button {
+    background-color: var(--accent);
+    color: #fff;
+    border-radius: 10px;
+    border: none;
+    font-weight: 600;
+    height: 3em;
+    transition: all 0.25s ease;
+}
+.stButton>button:hover {
+    background-color: var(--accent-hover);
+    transform: scale(1.02);
+}
 
-        textarea, input, select {
-            background-color: var(--card-bg) !important;
-            color: var(--text) !important;
-            border: 1px solid var(--border) !important;
-            border-radius: 6px !important;
-        }
+/* Expander */
+.stExpander {
+    background-color: var(--card-light);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+    .stExpander {
+        background-color: var(--card-dark);
+        border: 1px solid var(--border-dark);
+    }
+}
+</style>
+""", unsafe_allow_html=True)
 
-        .stExpander {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            margin-top: 10px;
-        }
-
-        </style>
-    """, unsafe_allow_html=True)
 
     # ---------------- Header ----------------
     st.markdown("<h1 class='title'>🤖 CodePilot</h1>", unsafe_allow_html=True)
