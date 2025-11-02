@@ -116,55 +116,91 @@ def main():
     # ---------------- Custom Styling ----------------
     st.markdown("""
         <style>
-        body {
-            background-color: #0e0e0e;
-            color: #e6e6e6;
-            font-family: 'Inter', 'Helvetica Neue', sans-serif;
+        html, body {
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: var(--background);
+            color: var(--text);
         }
-        [data-testid="stSidebar"] {
-            background-color: #141414;
-            color: #bfa76f;
+
+        :root {
+            --background: #f8f8f8;
+            --card-bg: #ffffff;
+            --text: #222;
+            --accent: #b6a268;
+            --accent-hover: #9f8c56;
+            --border: #ddd;
         }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --background: #0f1115;
+                --card-bg: #181a1f;
+                --text: #f5f5f5;
+                --accent: #c0aa70;
+                --accent-hover: #ad965c;
+                --border: #2c2c2c;
+            }
+        }
+
         .title {
-            font-size: 3em;
+            font-size: 2.8em;
             text-align: center;
-            color: #bfa76f;
+            color: var(--accent);
             font-weight: 800;
-            letter-spacing: 1px;
-            margin-bottom: 0.2em;
+            margin-bottom: 0.1em;
+            letter-spacing: 0.5px;
         }
+
         .subtitle {
             text-align: center;
-            color: #c9c9c9;
+            color: var(--text);
             font-size: 1.1em;
+            opacity: 0.8;
         }
+
         .muted {
             text-align: center;
-            color: #a39268;
+            color: var(--accent);
             font-size: 1rem;
             margin-top: 0.2em;
             margin-bottom: 1rem;
+            opacity: 0.9;
         }
+
+        [data-testid="stSidebar"] {
+            background-color: var(--card-bg);
+            color: var(--text);
+            border-right: 1px solid var(--border);
+        }
+
         .stButton>button {
-            background-color: #bfa76f;
-            color: #111;
+            background-color: var(--accent);
+            color: #fff;
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
             height: 3em;
             font-weight: 600;
-            letter-spacing: 0.5px;
-            transition: all 0.3s ease-in-out;
+            transition: all 0.3s ease;
         }
         .stButton>button:hover {
-            background-color: #a8925a;
+            background-color: var(--accent-hover);
             transform: scale(1.03);
         }
+
         textarea, input, select {
-            background-color: #1a1a1a !important;
-            color: #f2f2f2 !important;
-            border: 1px solid #2c2c2c !important;
+            background-color: var(--card-bg) !important;
+            color: var(--text) !important;
+            border: 1px solid var(--border) !important;
             border-radius: 6px !important;
         }
+
+        .stExpander {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+
         </style>
     """, unsafe_allow_html=True)
 
@@ -267,7 +303,7 @@ def main():
     # ---------------- Footer ----------------
     st.markdown("---")
     st.markdown(
-        "<p style='text-align: center; color: #888;'>Made with ❤️ by <b>Anushka Joshi</b></p>",
+        "<p style='text-align: center; color: var(--text); opacity: 0.6;'>Made with ❤️ by <b>Anushka Joshi</b></p>",
         unsafe_allow_html=True,
     )
 
