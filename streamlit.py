@@ -232,6 +232,12 @@ def main():
             st.error("❌ An unexpected error occurred.")
             st.text("Detailed Traceback:")
             st.code(traceback.format_exc(), language="python")
+    # Footer
+    st.divider()
+    st.markdown(
+        "<p style='text-align: center;'>Made by <b>Anushka Joshi</b>.</p>", 
+        unsafe_allow_html=True
+    )
 
 
 if __name__ == "__main__":
