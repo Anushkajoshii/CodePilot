@@ -2,13 +2,12 @@ name: CI/CD — Build & Publish Docker image
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
 
+# top-level defaults (not used in problematic expressions)
 env:
   IMAGE_NAME: codepilot
-  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build-test:
@@ -22,13 +21,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dev dependencies
+      - name: Install dev dependencies (best-effort)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt || true
           pip install flake8 pytest || true
 
-      - name: Run linter
+      - name: Run linter (non-blocking)
         run: |
           if command -v flake8 >/dev/null 2>&1; then
             flake8 || echo "flake8 issues (non-blocking)."
@@ -36,7 +35,7 @@ jobs:
             echo "flake8 not installed"
           fi
 
-      - name: Run tests
+      - name: Run tests (non-blocking)
         run: |
           if [ -f "pyproject.toml" ] || [ -d "tests" ]; then
             pytest -q || echo "pytest failed (non-blocking)."
@@ -48,8 +47,10 @@ jobs:
     needs: build-test
     runs-on: ubuntu-latest
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-      TAG: ${{ github.sha }}
+      IMAGE_NAME: ${{ env.IMAGE_NAME }}   # simple alias; safe here
+      # IMAGE_TAG will be computed in-run using the commit SHA
+    outputs:
+      IMAGE_FULL: ${{ steps.set-output.outputs.image_full || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,62 +61,93 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to registry
+      - name: Login to registry (GHCR or Docker Hub)
         id: login
         run: |
+          # Prefer Docker Hub if DOCKERHUB_USERNAME secret is provided, otherwise use GHCR with GITHUB_TOKEN
           if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            echo "::set-output name=registry::docker.io"
+            echo "registry=docker.io" >> $GITHUB_ENV
+            echo "registry_user=${{ secrets.DOCKERHUB_USERNAME }}" >> $GITHUB_ENV
           else
-            echo "${{ github.repository_owner }} acts via GHCR"
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            echo "::set-output name=registry::ghcr.io"
+            echo "registry=ghcr.io" >> $GITHUB_ENV
+            echo "registry_user=${{ github.actor }}" >> $GITHUB_ENV
           fi
 
       - name: Build and push image
+        id: build-and-push
         run: |
-          REG=${{ steps.login.outputs.registry }}
-          if [ "$REG" = "docker.io" ]; then
-            IMAGE_FULL=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          # Compose image name using registry and repo-owner; use shell variables to avoid flaky expression contexts
+          IMAGE_TAG=${GITHUB_SHA}
+          if [ "${registry}" = "docker.io" ]; then
+            IMAGE_FULL="${registry_user}/${IMAGE_NAME}:${IMAGE_TAG}"
           else
-            IMAGE_FULL=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            IMAGE_FULL="${registry}/${{ github.repository_owner }}/${IMAGE_NAME}:${IMAGE_TAG}"
           fi
-          echo "Building ${IMAGE_FULL}"
-          docker build -t "${IMAGE_FULL}" .
-          docker push "${IMAGE_FULL}"
-          echo "IMAGE=${IMAGE_FULL}" >> $GITHUB_OUTPUT
 
-      - name: Publish latest tag (optional)
+          echo "Building image ${IMAGE_FULL}"
+          docker build -t "${IMAGE_FULL}" .
+
+          echo "Pushing ${IMAGE_FULL}"
+          docker push "${IMAGE_FULL}"
+
+          # export image name as a step output
+          echo "::set-output name=image_full::${IMAGE_FULL}"
+      - name: Publish latest tag (optional on main)
         if: github.ref == 'refs/heads/main'
         run: |
-          REG=${{ steps.login.outputs.registry }}
-          if [ "$REG" = "docker.io" ]; then
-            LATEST=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-          else
-            LATEST=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+          IMAGE_FULL="${{ steps.build-and-push.outputs.image_full }}"
+          if [ -z "${IMAGE_FULL}" ]; then
+            echo "No built image found; skipping tag."
+            exit 0
           fi
-          docker tag "${{ steps.build-and-push.outputs.IMAGE }}" "${LATEST}" || true
-          docker push "${LATEST}" || true
+          if [ "${registry}" = "docker.io" ]; then
+            LATEST="${registry_user}/${IMAGE_NAME}:latest"
+          else
+            LATEST="${registry}/${{ github.repository_owner }}/${IMAGE_NAME}:latest"
+          fi
+          echo "Tagging ${IMAGE_FULL} as ${LATEST}"
+          docker tag "${IMAGE_FULL}" "${LATEST}"
+          docker push "${LATEST}" || echo "Push latest failed (non-blocking)."
 
   deploy-ssh:
-    if: ${{ secrets.REMOTE_HOST != '' && secrets.REMOTE_SSH_KEY != '' }}
-    runs-on: ubuntu-latest
     needs: build-and-push
+    runs-on: ubuntu-latest
     steps:
+      - name: Check deploy secrets and skip if missing
+        id: check-secrets
+        run: |
+          # If any required secret is missing or empty, skip deploy (successful no-op)
+          if [ -z "${{ secrets.REMOTE_HOST }}" ] || [ -z "${{ secrets.REMOTE_SSH_KEY }}" ] || [ -z "${{ secrets.REMOTE_USER }}" ]; then
+            echo "Missing one or more deploy secrets (REMOTE_HOST, REMOTE_USER, REMOTE_SSH_KEY). Skipping deploy."
+            exit 0
+          fi
+          echo "All deploy secrets present."
+
       - name: Setup SSH key
+        if: ${{ secrets.REMOTE_HOST && secrets.REMOTE_SSH_KEY && secrets.REMOTE_USER }}
         uses: webfactory/ssh-agent@v0.8.1
         with:
           ssh-private-key: ${{ secrets.REMOTE_SSH_KEY }}
 
       - name: Pull & restart on remote host
+        if: ${{ secrets.REMOTE_HOST && secrets.REMOTE_SSH_KEY && secrets.REMOTE_USER }}
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          IMAGE_FULL: ${{ steps.build-and-push.outputs.image_full }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
-            docker pull ${IMAGE}
+          if [ -z "${IMAGE_FULL}" ]; then
+            echo "No image to deploy. Aborting deploy step."
+            exit 0
+          fi
+
+          echo "Deploying ${IMAGE_FULL} to ${REMOTE_USER}@${REMOTE_HOST}"
+          ssh -o StrictHostKeyChecking=no "${{ secrets.REMOTE_USER }}"@"${{ secrets.REMOTE_HOST }}" <<'EOF'
+            docker pull '"${IMAGE_FULL}"' || true
             docker stop codepilot || true
             docker rm codepilot || true
             docker run -d --name codepilot -p 8501:8501 \
-              -e GROQ_API_KEY="${GROQ_API_KEY}" \
-              --restart unless-stopped ${IMAGE}
+              -e STREAMLIT_SERVER_HEADLESS=true \
+              -e STREAMLIT_SERVER_PORT=8501 \
+              --restart unless-stopped '"${IMAGE_FULL}"'
           EOF
