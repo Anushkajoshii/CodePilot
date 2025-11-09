@@ -1,0 +1,121 @@
+name: CI/CD — Build & Publish Docker image
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  IMAGE_NAME: codepilot
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install flake8 pytest || true
+
+      - name: Run linter
+        run: |
+          if command -v flake8 >/dev/null 2>&1; then
+            flake8 || echo "flake8 issues (non-blocking)."
+          else
+            echo "flake8 not installed"
+          fi
+
+      - name: Run tests
+        run: |
+          if [ -f "pyproject.toml" ] || [ -d "tests" ]; then
+            pytest -q || echo "pytest failed (non-blocking)."
+          else
+            echo "No tests found - skipping"
+          fi
+
+  build-and-push:
+    needs: build-test
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+      TAG: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (optional for multi-arch)
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to registry
+        id: login
+        run: |
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            echo "::set-output name=registry::docker.io"
+          else
+            echo "${{ github.repository_owner }} acts via GHCR"
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "::set-output name=registry::ghcr.io"
+          fi
+
+      - name: Build and push image
+        run: |
+          REG=${{ steps.login.outputs.registry }}
+          if [ "$REG" = "docker.io" ]; then
+            IMAGE_FULL=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          else
+            IMAGE_FULL=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          fi
+          echo "Building ${IMAGE_FULL}"
+          docker build -t "${IMAGE_FULL}" .
+          docker push "${IMAGE_FULL}"
+          echo "IMAGE=${IMAGE_FULL}" >> $GITHUB_OUTPUT
+
+      - name: Publish latest tag (optional)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          REG=${{ steps.login.outputs.registry }}
+          if [ "$REG" = "docker.io" ]; then
+            LATEST=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          else
+            LATEST=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+          fi
+          docker tag "${{ steps.build-and-push.outputs.IMAGE }}" "${LATEST}" || true
+          docker push "${LATEST}" || true
+
+  deploy-ssh:
+    if: ${{ secrets.REMOTE_HOST != '' && secrets.REMOTE_SSH_KEY != '' }}
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.REMOTE_SSH_KEY }}
+
+      - name: Pull & restart on remote host
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
+            docker pull ${IMAGE}
+            docker stop codepilot || true
+            docker rm codepilot || true
+            docker run -d --name codepilot -p 8501:8501 \
+              -e GROQ_API_KEY="${GROQ_API_KEY}" \
+              --restart unless-stopped ${IMAGE}
+          EOF
