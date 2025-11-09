@@ -1,5 +1,4 @@
-name: CI/CD — Build & Publish Docker image
-
+name: CI/CD
 on:
   push:
     branches: [ main ]
