@@ -1,10 +1,10 @@
 name: CI/CD
+
 on:
   push:
     branches: [ main ]
   pull_request:
 
-# top-level defaults (not used in problematic expressions)
 env:
   IMAGE_NAME: codepilot
 
@@ -45,11 +45,9 @@ jobs:
   build-and-push:
     needs: build-test
     runs-on: ubuntu-latest
-    env:
-      IMAGE_NAME: ${{ env.IMAGE_NAME }}   # simple alias; safe here
-      # IMAGE_TAG will be computed in-run using the commit SHA
+    # IMAGE_NAME provided from top-level env; available in run via $IMAGE_NAME
     outputs:
-      IMAGE_FULL: ${{ steps.set-output.outputs.image_full || '' }}
+      image_full: ${{ steps.build_and_push.outputs.image_full }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,28 +59,34 @@ jobs:
         uses: docker/setup-buildx-action@v2
 
       - name: Login to registry (GHCR or Docker Hub)
-        id: login
+        id: registry-login
         run: |
-          # Prefer Docker Hub if DOCKERHUB_USERNAME secret is provided, otherwise use GHCR with GITHUB_TOKEN
+          # Decide registry in-shell. Use Docker Hub if DOCKERHUB_USERNAME secret exists, otherwise GHCR.
           if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+            echo "Using Docker Hub"
+            echo "REGISTRY_TYPE=dockerhub" >> $GITHUB_ENV
+            echo "REGISTRY_HOST=docker.io" >> $GITHUB_ENV
+            echo "REGISTRY_USER=${{ secrets.DOCKERHUB_USERNAME }}" >> $GITHUB_ENV
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            echo "registry=docker.io" >> $GITHUB_ENV
-            echo "registry_user=${{ secrets.DOCKERHUB_USERNAME }}" >> $GITHUB_ENV
           else
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            echo "registry=ghcr.io" >> $GITHUB_ENV
-            echo "registry_user=${{ github.actor }}" >> $GITHUB_ENV
+            echo "Using GHCR"
+            echo "REGISTRY_TYPE=ghcr" >> $GITHUB_ENV
+            echo "REGISTRY_HOST=ghcr.io" >> $GITHUB_ENV
+            echo "REGISTRY_USER=${{ github.actor }}" >> $GITHUB_ENV
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           fi
 
       - name: Build and push image
-        id: build-and-push
+        id: build_and_push
         run: |
-          # Compose image name using registry and repo-owner; use shell variables to avoid flaky expression contexts
+          # Build image name using shell variables only
           IMAGE_TAG=${GITHUB_SHA}
-          if [ "${registry}" = "docker.io" ]; then
-            IMAGE_FULL="${registry_user}/${IMAGE_NAME}:${IMAGE_TAG}"
+          echo "IMAGE_NAME is '$IMAGE_NAME'"
+
+          if [ "${REGISTRY_TYPE}" = "dockerhub" ]; then
+            IMAGE_FULL="${REGISTRY_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
           else
-            IMAGE_FULL="${registry}/${{ github.repository_owner }}/${IMAGE_NAME}:${IMAGE_TAG}"
+            IMAGE_FULL="${REGISTRY_HOST}/${{ github.repository_owner }}/${IMAGE_NAME}:${IMAGE_TAG}"
           fi
 
           echo "Building image ${IMAGE_FULL}"
@@ -91,21 +95,24 @@ jobs:
           echo "Pushing ${IMAGE_FULL}"
           docker push "${IMAGE_FULL}"
 
-          # export image name as a step output
-          echo "::set-output name=image_full::${IMAGE_FULL}"
-      - name: Publish latest tag (optional on main)
+          # export as step output for job-level output
+          echo "image_full=${IMAGE_FULL}" >> $GITHUB_OUTPUT
+
+      - name: Publish latest tag (only on main)
         if: github.ref == 'refs/heads/main'
         run: |
-          IMAGE_FULL="${{ steps.build-and-push.outputs.image_full }}"
+          IMAGE_FULL="${{ steps.build_and_push.outputs.image_full }}"
           if [ -z "${IMAGE_FULL}" ]; then
             echo "No built image found; skipping tag."
             exit 0
           fi
-          if [ "${registry}" = "docker.io" ]; then
-            LATEST="${registry_user}/${IMAGE_NAME}:latest"
+
+          if [ "${REGISTRY_TYPE}" = "dockerhub" ]; then
+            LATEST="${REGISTRY_USER}/${IMAGE_NAME}:latest"
           else
-            LATEST="${registry}/${{ github.repository_owner }}/${IMAGE_NAME}:latest"
+            LATEST="${REGISTRY_HOST}/${{ github.repository_owner }}/${IMAGE_NAME}:latest"
           fi
+
           echo "Tagging ${IMAGE_FULL} as ${LATEST}"
           docker tag "${IMAGE_FULL}" "${LATEST}"
           docker push "${LATEST}" || echo "Push latest failed (non-blocking)."
@@ -114,26 +121,30 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Check deploy secrets and skip if missing
-        id: check-secrets
+      - name: Decide whether to deploy (set step output)
+        id: check
         run: |
-          # If any required secret is missing or empty, skip deploy (successful no-op)
-          if [ -z "${{ secrets.REMOTE_HOST }}" ] || [ -z "${{ secrets.REMOTE_SSH_KEY }}" ] || [ -z "${{ secrets.REMOTE_USER }}" ]; then
+          # If any required secret is missing, mark deploy=false
+          if [ -z "${{ secrets.REMOTE_HOST }}" ] || [ -z "${{ secrets.REMOTE_USER }}" ] || [ -z "${{ secrets.REMOTE_SSH_KEY }}" ]; then
+            echo "deploy=false" >> $GITHUB_OUTPUT
             echo "Missing one or more deploy secrets (REMOTE_HOST, REMOTE_USER, REMOTE_SSH_KEY). Skipping deploy."
             exit 0
           fi
+          echo "deploy=true" >> $GITHUB_OUTPUT
           echo "All deploy secrets present."
 
       - name: Setup SSH key
-        if: ${{ secrets.REMOTE_HOST && secrets.REMOTE_SSH_KEY && secrets.REMOTE_USER }}
+        if: ${{ steps.check.outputs.deploy == 'true' }}
         uses: webfactory/ssh-agent@v0.8.1
         with:
           ssh-private-key: ${{ secrets.REMOTE_SSH_KEY }}
 
       - name: Pull & restart on remote host
-        if: ${{ secrets.REMOTE_HOST && secrets.REMOTE_SSH_KEY && secrets.REMOTE_USER }}
+        if: ${{ steps.check.outputs.deploy == 'true' }}
         env:
-          IMAGE_FULL: ${{ steps.build-and-push.outputs.image_full }}
+          IMAGE_FULL: ${{ needs.build-and-push.outputs.image_full }}
+          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
         run: |
           if [ -z "${IMAGE_FULL}" ]; then
             echo "No image to deploy. Aborting deploy step."
@@ -141,7 +152,9 @@ jobs:
           fi
 
           echo "Deploying ${IMAGE_FULL} to ${REMOTE_USER}@${REMOTE_HOST}"
-          ssh -o StrictHostKeyChecking=no "${{ secrets.REMOTE_USER }}"@"${{ secrets.REMOTE_HOST }}" <<'EOF'
+
+          # Use SSH to pull & run (adapt as needed to docker-compose / systemd)
+          ssh -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" <<'EOF'
             docker pull '"${IMAGE_FULL}"' || true
             docker stop codepilot || true
             docker rm codepilot || true
