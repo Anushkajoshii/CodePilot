@@ -76,17 +76,29 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           fi
 
-      - name: Build and push image
+            - name: Build and push image
         id: build_and_push
         run: |
-          # Build image name using shell variables only
+          # Build image name using shell variables only, ensure lowercase owner & image
           IMAGE_TAG=${GITHUB_SHA}
-          echo "IMAGE_NAME is '$IMAGE_NAME'"
+
+          # Get repo owner from the workflow context and lowercase it for Docker tag rules
+          REPO_OWNER="${{ github.repository_owner }}"
+          OWNER_LOWER="$(echo "${REPO_OWNER}" | tr '[:upper:]' '[:lower:]')"
+
+          # Ensure IMAGE_NAME is lowercase too (defensive)
+          IMAGE_NAME_LOWER="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+
+          echo "Repo owner (original): ${REPO_OWNER}"
+          echo "Repo owner (lowercased): ${OWNER_LOWER}"
+          echo "Image name (lowercased): ${IMAGE_NAME_LOWER}"
+          echo "Registry type: ${REGISTRY_TYPE}"
+          echo "Registry host: ${REGISTRY_HOST}"
 
           if [ "${REGISTRY_TYPE}" = "dockerhub" ]; then
-            IMAGE_FULL="${REGISTRY_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
+            IMAGE_FULL="${REGISTRY_USER}/${IMAGE_NAME_LOWER}:${IMAGE_TAG}"
           else
-            IMAGE_FULL="${REGISTRY_HOST}/${{ github.repository_owner }}/${IMAGE_NAME}:${IMAGE_TAG}"
+            IMAGE_FULL="${REGISTRY_HOST}/${OWNER_LOWER}/${IMAGE_NAME_LOWER}:${IMAGE_TAG}"
           fi
 
           echo "Building image ${IMAGE_FULL}"
