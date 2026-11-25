@@ -122,3 +122,49 @@ def build_context(written: dict[str, str], max_chars: int = 6000) -> str:
         parts.append(f"--- {path}\n{snippet}")
         used += len(snippet)
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Making generated apps run when index.html is opened directly in a browser
+# ---------------------------------------------------------------------------
+
+_EXPORT_LIST = re.compile(r"^\s*export\s*\{[^}]*\}\s*(?:from\s*['\"][^'\"]+['\"])?\s*;?\s*$", re.MULTILINE)
+_EXPORT_DEFAULT_NAMED = re.compile(r"^(\s*)export\s+default\s+(?=(?:async\s+)?(?:function|class)\b)", re.MULTILINE)
+_EXPORT_DEFAULT_EXPR = re.compile(r"^\s*export\s+default\s+[\w$.]+\s*;?\s*$", re.MULTILINE)
+_EXPORT_DECL = re.compile(r"^(\s*)export\s+(?=(?:async\s+)?(?:function|class|const|let|var)\b)", re.MULTILINE)
+_IMPORT = re.compile(r"^\s*import\s+(?:[\s\S]*?\s+from\s+)?['\"][^'\"]+['\"]\s*;?\s*$", re.MULTILINE)
+_MODULE_ATTR = re.compile(r"\s+type=[\"']module[\"']", re.IGNORECASE)
+
+
+def make_browser_safe_js(code: str) -> tuple[str, bool]:
+    """Remove ES module syntax so files work as plain <script> tags sharing globals."""
+    new = _EXPORT_LIST.sub("", code)
+    new = _EXPORT_DEFAULT_NAMED.sub(r"\1", new)
+    new = _EXPORT_DEFAULT_EXPR.sub("", new)
+    new = _EXPORT_DECL.sub(r"\1", new)
+    new = _IMPORT.sub("", new)
+    return new, new != code
+
+
+def make_browser_safe_html(html: str) -> tuple[str, bool]:
+    """Load scripts as classic scripts (no type="module"), matching make_browser_safe_js."""
+    new = _MODULE_ATTR.sub("", html)
+    return new, new != html
+
+
+_LOCAL_REF = re.compile(r"""(?:src|href)=["']([^"'#?:]+?\.(?:js|css|png|jpe?g|gif|svg|webp|ico|mp3|wav|json))["']""", re.I)
+_CSS_URL = re.compile(r"""url\(\s*["']?([^"')#?:]+?\.(?:png|jpe?g|gif|svg|webp|woff2?|ttf))["']?\s*\)""", re.I)
+
+
+def find_missing_files(files: dict[str, str]) -> list[str]:
+    """List local files that HTML or CSS refers to but the project does not contain."""
+    have = {p.lstrip("./") for p in files}
+    missing = []
+    for path, text in files.items():
+        refs = _LOCAL_REF.findall(text) if path.endswith(".html") else []
+        refs += _CSS_URL.findall(text) if path.endswith((".css", ".html")) else []
+        for ref in refs:
+            ref = ref.lstrip("./")
+            if ref not in have and ref not in missing:
+                missing.append(ref)
+    return missing

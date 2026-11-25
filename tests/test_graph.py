@@ -36,7 +36,7 @@ class FakeLLM:
             return TASKS.model_copy(deep=True)
         if self.model == "retired":
             raise Exception("model_decommissioned")
-        return AIMessage(content="```\n// file for prompt\n```")
+        return AIMessage(content="```\nexport class A {}\n```")
 
 
 def test_full_graph_writes_each_file_once(tmp_path, monkeypatch):
@@ -48,7 +48,9 @@ def test_full_graph_writes_each_file_once(tmp_path, monkeypatch):
                           on_event=lambda kind, d: events.append(kind))
     state = agent.invoke({"user_prompt": "a click counter"})
     assert set(state["written"]) == {"index.html", "app.js"}
-    assert (tmp_path / root.split("/")[-1] / "app.js").read_text() == "// file for prompt\n"
+    # the checker converted module syntax so the file runs as a plain <script>
+    assert (tmp_path / root.split("/")[-1] / "app.js").read_text() == "class A {}\n"
+    assert any("module syntax" in w for w in state["warnings"])
     assert any(m == "good" for m, _ in log)  # fell back from the retired model
     assert events.count("file") == 2
 

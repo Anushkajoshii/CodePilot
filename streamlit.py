@@ -272,9 +272,10 @@ def main():
 
                 try:
                     agent = build_agent(api_key, on_event=on_event)
-                    agent.invoke({"user_prompt": user_prompt}, {"recursion_limit": 40})
+                    final = agent.invoke({"user_prompt": user_prompt}, {"recursion_limit": 40})
                     status.update(label="Your app is ready 🎉", state="complete", expanded=False)
                     st.session_state["last_project"] = project_path
+                    st.session_state["last_warnings"] = final.get("warnings", [])
                 except Exception as exc:
                     status.update(label="Generation stopped", state="error")
                     st.error(friendly_error(exc))
@@ -287,6 +288,8 @@ def main():
             files = read_project_files(Path(last))
             if files:
                 st.success("Here is your app.")
+                for note in st.session_state.get("last_warnings", []):
+                    st.info(note)
                 show_project(files, f"{Path(last).name}.zip", key="dl_generated")
 
     st.markdown("---")

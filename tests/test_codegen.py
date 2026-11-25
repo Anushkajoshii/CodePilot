@@ -68,3 +68,35 @@ def test_build_context_puts_index_first_and_trims():
     assert ctx.index("index.html") < ctx.index("app.js")
     long = build_context({"index.html": "y" * 5000}, max_chars=1000)
     assert "(trimmed)" in long
+
+
+def test_make_browser_safe_js_strips_module_syntax():
+    from agent.codegen import make_browser_safe_js
+
+    src = (
+        "import { a } from './a.js';\n"
+        "export class Engine {}\n"
+        "export default function go() {}\n"
+        "export const X = 1;\n"
+        "function helper() {}\n"
+        "export { helper };\n"
+        "export default Engine;\n"
+    )
+    out, changed = make_browser_safe_js(src)
+    assert changed
+    assert "export" not in out and "import" not in out
+    assert "class Engine {}" in out and "function go() {}" in out and "const X = 1;" in out
+    same, changed = make_browser_safe_js("const exported = 1; // export later\n")
+    assert not changed
+
+
+def test_find_missing_files():
+    from agent.codegen import find_missing_files
+
+    files = {
+        "index.html": '<link href="style.css"><script src="app.js"></script><img src="img/logo.png">',
+        "style.css": ".p{background:url('pieces/wK.svg')}",
+        "app.js": "",
+    }
+    files["style.css"] = files["style.css"]  # style.css exists, so only the two assets are missing
+    assert set(find_missing_files(files)) == {"img/logo.png", "pieces/wK.svg"}

@@ -20,7 +20,8 @@ from langgraph.graph import END, StateGraph
 
 from agent import tools
 from agent.codegen import (
-    BadOutputError, build_context, call_with_fallback, call_with_retry, is_bad_output, strip_code_fences,
+    BadOutputError, build_context, call_with_fallback, call_with_retry, find_missing_files, is_bad_output,
+    make_browser_safe_html, make_browser_safe_js, strip_code_fences,
 )
 from agent.prompts import CODER_SYSTEM_PROMPT, architect_prompt, coder_prompt, planner_prompt
 from agent.states import Plan, TaskPlan
@@ -46,6 +47,7 @@ class GraphState(TypedDict, total=False):
     task_plan: TaskPlan
     step: int
     written: dict
+    warnings: list
 
 
 def init_project_root(app_name: str = "project") -> str:
@@ -144,7 +146,7 @@ def build_agent(api_key: str, llm_factory=get_llm, on_event=None):
         messages = [
             SystemMessage(content=CODER_SYSTEM_PROMPT),
             HumanMessage(content=coder_prompt(
-                summary, all_files, task.filepath, task.task_description, build_context(state["written"]))),
+                summary, all_files, task.filepath, task.task_description, build_context(state["written"], max_chars=8000))),
         ]
 
         def make_call(model):
@@ -157,15 +159,41 @@ def build_agent(api_key: str, llm_factory=get_llm, on_event=None):
         written = {**state["written"], task.filepath: content}
         return {"written": written, "step": idx + 1}
 
+    def checker_agent(state: dict) -> dict:
+        """Fix common browser problems in the generated files and report anything still missing."""
+        emit("stage", "Checking the files work together in a browser...")
+        written = dict(state["written"])
+        fixed = []
+        for path, content in written.items():
+            if path.endswith(".js"):
+                new, changed = make_browser_safe_js(content)
+            elif path.endswith(".html"):
+                new, changed = make_browser_safe_html(content)
+            else:
+                continue
+            if changed:
+                tools.write_file(path, new)
+                written[path] = new
+                fixed.append(path)
+        warnings = []
+        if fixed:
+            warnings.append("Converted module syntax (import/export) to plain scripts in: " + ", ".join(fixed))
+        missing = find_missing_files(written)
+        if missing:
+            warnings.append("These files are referenced but were not generated: " + ", ".join(missing))
+        return {"written": written, "warnings": warnings}
+
     graph = StateGraph(GraphState)
     graph.add_node("planner", planner_agent)
     graph.add_node("architect", architect_agent)
     graph.add_node("coder", coder_agent)
+    graph.add_node("checker", checker_agent)
     graph.set_entry_point("planner")
     graph.add_edge("planner", "architect")
     graph.add_edge("architect", "coder")
     graph.add_conditional_edges(
         "coder",
-        lambda s: END if s["step"] >= len(s["task_plan"].implementation_steps) else "coder",
+        lambda s: "checker" if s["step"] >= len(s["task_plan"].implementation_steps) else "coder",
     )
+    graph.add_edge("checker", END)
     return graph.compile()
