@@ -168,3 +168,40 @@ def find_missing_files(files: dict[str, str]) -> list[str]:
             if ref not in have and ref not in missing:
                 missing.append(ref)
     return missing
+
+
+def unbalanced_brackets(code: str) -> bool:
+    """Rough JS sanity check: are (), [], {} balanced outside strings and comments?
+
+    Catches files that were cut off mid-way. Regex literals are not parsed, so this is a
+    warning signal only, never used to block a project.
+    """
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack: list[str] = []
+    i, n = 0, len(code)
+    while i < n:
+        ch = code[i]
+        nxt = code[i + 1] if i + 1 < n else ""
+        if ch == "/" and nxt == "/":
+            j = code.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        if ch == "/" and nxt == "*":
+            j = code.find("*/", i + 2)
+            i = n if j == -1 else j + 2
+            continue
+        if ch in "'\"`":
+            quote, i = ch, i + 1
+            while i < n and code[i] != quote:
+                i += 2 if code[i] == "\\" else 1
+            if i >= n:
+                return True  # string never closed
+            i += 1
+            continue
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in ")]}":
+            if not stack or stack.pop() != pairs[ch]:
+                return True
+        i += 1
+    return bool(stack)

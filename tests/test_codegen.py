@@ -100,3 +100,17 @@ def test_find_missing_files():
     }
     files["style.css"] = files["style.css"]  # style.css exists, so only the two assets are missing
     assert set(find_missing_files(files)) == {"img/logo.png", "pieces/wK.svg"}
+
+
+def test_unbalanced_brackets_detects_cut_off_files():
+    from pathlib import Path
+
+    from agent.codegen import unbalanced_brackets
+
+    assert not unbalanced_brackets("function a(){ const s = '}'; // }\n return [1,2]; } /* { */")
+    assert not unbalanced_brackets("const t = `a ${b} c`; const q = \"it's\";")
+    assert unbalanced_brackets("function a() { if (x) {")
+    assert unbalanced_brackets("const s = 'never closed")
+    for folder in ("tictactoe", "sketching_app", "todo_app"):
+        for js in (Path(__file__).resolve().parent.parent / "examples" / folder).rglob("*.js"):
+            assert not unbalanced_brackets(js.read_text()), js

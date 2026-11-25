@@ -195,7 +195,7 @@ def show_project(files: dict, download_name: str, key: str) -> None:
     with col_preview:
         st.markdown("**Live preview**")
         if "index.html" in files:
-            components.html(preview_html(files), height=520, scrolling=True)
+            components.html(preview_html(files), height=700, scrolling=True)
         else:
             st.info("No index.html in this project, so there is nothing to preview. Download it to run locally.")
     st.download_button("⬇️ Download project ZIP", data=zip_bytes(files), file_name=download_name,

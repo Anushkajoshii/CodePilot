@@ -15,6 +15,8 @@ Rules:
 - No images, fonts or other asset files. Use Unicode symbols (for example chess pieces ♔♚), emoji or CSS shapes.
 - Every feature you list must be implemented by the planned files.
 - Keep it short: a one-line description, at most 8 features, one short purpose per file.
+- Keep each JavaScript file under about 200 lines: split bigger logic into separate files
+  (for example game rules, computer opponent, and page/UI code).
 
 User idea:
 {user_prompt}"""
@@ -46,6 +48,7 @@ Rules:
 - In JavaScript, wait for the page to load (DOMContentLoaded) before touching the DOM.
 - Never use ES modules: no import or export statements and no type="module". Files share code through
   global classes, functions and variables, loaded with plain <script src> tags in dependency order.
+- When the page loads, show the app ready to use (for example, draw the board) without needing a start click.
 - Never reference image, font or other asset files. Show things with text, Unicode symbols, emoji or CSS.
 - Double-check the logic once before answering: every button and feature must actually work."""
 

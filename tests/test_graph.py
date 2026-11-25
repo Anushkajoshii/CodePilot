@@ -72,3 +72,26 @@ def test_architect_recovers_when_model_answers_in_prose(tmp_path, monkeypatch):
     state = g.build_agent("k", llm_factory=lambda k, m, t: FakeLLM(m, log)).invoke({"user_prompt": "x"})
     assert ("prose", "json_mode") in log and ("good", "function_calling") in log
     assert len(state["written"]) == 2
+
+
+class TruncatingLLM(FakeLLM):
+    """First answer is cut off at the token cap; the continuation finishes it."""
+
+    def invoke(self, prompt):
+        if self.schema is not None:
+            return super().invoke(prompt)
+        self.log.append("call")
+        if len(self.log) % 2 == 1:
+            return AIMessage(content="function a() {\n  return 1", response_metadata={"finish_reason": "length"})
+        return AIMessage(content=";\n}\n", response_metadata={"finish_reason": "stop"})
+
+
+def test_coder_continues_cut_off_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(g, "BASE_PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(g, "PLANNER_MODELS", ["good"])
+    monkeypatch.setattr(g, "CODER_MODELS", ["good"])
+    g.init_project_root("t")
+    log = []
+    state = g.build_agent("k", llm_factory=lambda k, m, t: TruncatingLLM(m, log)).invoke({"user_prompt": "x"})
+    assert state["written"]["app.js"] == "function a() {\n  return 1;\n}\n"
+    assert not any("incomplete" in w for w in state["warnings"])

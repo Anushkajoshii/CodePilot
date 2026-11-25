@@ -14,14 +14,14 @@ import pathlib
 import uuid
 from typing import TypedDict
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 
 from agent import tools
 from agent.codegen import (
     BadOutputError, build_context, call_with_fallback, call_with_retry, find_missing_files, is_bad_output,
-    make_browser_safe_html, make_browser_safe_js, strip_code_fences,
+    make_browser_safe_html, make_browser_safe_js, strip_code_fences, unbalanced_brackets,
 )
 from agent.prompts import CODER_SYSTEM_PROMPT, architect_prompt, coder_prompt, planner_prompt
 from agent.states import Plan, TaskPlan
@@ -35,7 +35,8 @@ PLANNER_MODELS = [m.strip() for m in os.environ.get(
 CODER_MODELS = [m.strip() for m in os.environ.get(
     "CODEPILOT_CODER_MODELS", "llama-3.3-70b-versatile,openai/gpt-oss-20b,llama-3.1-8b-instant").split(",") if m.strip()]
 MAX_IMPLEMENTATION_STEPS = int(os.environ.get("CODEPILOT_MAX_STEPS", "5"))
-MAX_FILE_TOKENS = int(os.environ.get("CODEPILOT_MAX_FILE_TOKENS", "3000"))
+MAX_FILE_TOKENS = int(os.environ.get("CODEPILOT_MAX_FILE_TOKENS", "4000"))
+MAX_CONTINUATIONS = int(os.environ.get("CODEPILOT_MAX_CONTINUATIONS", "3"))
 
 BASE_PROJECTS_DIR = pathlib.Path.cwd() / "generated_projects"
 
@@ -150,11 +151,29 @@ def build_agent(api_key: str, llm_factory=get_llm, on_event=None):
         ]
 
         def make_call(model):
+            """Write the file; if the answer is cut off at the token cap, ask the model to continue."""
             llm = llm_factory(api_key, model, MAX_FILE_TOKENS)
-            return call_with_retry(lambda: llm.invoke(messages), on_wait=wait_note)
+            convo = list(messages)
+            parts = []
+            for attempt in range(MAX_CONTINUATIONS + 1):
+                response = call_with_retry(lambda convo=convo: llm.invoke(convo), on_wait=wait_note)
+                text = getattr(response, "content", str(response)) or ""
+                parts.append(text)
+                finish = (getattr(response, "response_metadata", None) or {}).get("finish_reason")
+                if finish != "length":
+                    return "".join(parts)
+                if attempt == MAX_CONTINUATIONS:
+                    break
+                emit("retry", f"{task.filepath} is long, continuing where the model stopped...")
+                convo = convo + [
+                    AIMessage(content=text),
+                    HumanMessage(content="Continue exactly where you stopped. Output only the rest of the file, "
+                                         "starting with the next character. Do not repeat anything."),
+                ]
+            emit("retry", f"{task.filepath} may be incomplete: it hit the length limit.")
+            return "".join(parts)
 
-        response = call_with_fallback(CODER_MODELS, make_call)
-        content = strip_code_fences(getattr(response, "content", str(response)))
+        content = strip_code_fences(call_with_fallback(CODER_MODELS, make_call))
         tools.write_file(task.filepath, content)
         written = {**state["written"], task.filepath: content}
         return {"written": written, "step": idx + 1}
@@ -178,6 +197,10 @@ def build_agent(api_key: str, llm_factory=get_llm, on_event=None):
         warnings = []
         if fixed:
             warnings.append("Converted module syntax (import/export) to plain scripts in: " + ", ".join(fixed))
+        for path, content in written.items():
+            if path.endswith(".js") and unbalanced_brackets(content):
+                warnings.append(f"{path} looks incomplete or has a syntax error (unbalanced brackets). "
+                                "Try generating again, or a smaller idea.")
         missing = find_missing_files(written)
         if missing:
             warnings.append("These files are referenced but were not generated: " + ", ".join(missing))
