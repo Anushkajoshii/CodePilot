@@ -1,301 +1,144 @@
-# from dotenv import load_dotenv
-# import logging
-# from langchain_groq.chat_models import ChatGroq
-# from langgraph.constants import END
-# from langgraph.graph import StateGraph
-# # from langgraph.prebuilt import create_react_agent
-# from langchain.agents import create_agent
+"""CodePilot: a three-agent LangGraph pipeline (Planner -> Architect -> Coder).
 
-
-
-# from agent.prompts import *
-# from agent.states import *
-# from agent.tools import write_file, read_file, get_current_directory, list_files
-
-# _ = load_dotenv()
-
-# logging.basicConfig(level=logging.DEBUG)
-
-# llm = ChatGroq(model="openai/gpt-oss-120b")
-
-
-# def planner_agent(state: dict) -> dict:
-#     """Converts user prompt into a structured Plan."""
-#     user_prompt = state["user_prompt"]
-#     resp = llm.with_structured_output(Plan).invoke(
-#         planner_prompt(user_prompt)
-#     )
-#     if resp is None:
-#         raise ValueError("Planner did not return a valid response.")
-#     return {"plan": resp}
-
-
-# def architect_agent(state: dict) -> dict:
-#     """Creates TaskPlan from Plan."""
-#     plan: Plan = state["plan"]
-#     resp = llm.with_structured_output(TaskPlan).invoke(
-#         architect_prompt(plan=plan.model_dump_json())
-#     )
-#     if resp is None:
-#         raise ValueError("Planner did not return a valid response.")
-
-#     resp.plan = plan
-#     print(resp.model_dump_json())
-#     return {"task_plan": resp}
-
-
-# def coder_agent(state: dict) -> dict:
-#     """LangGraph tool-using coder agent."""
-#     coder_state: CoderState = state.get("coder_state")
-#     if coder_state is None:
-#         coder_state = CoderState(task_plan=state["task_plan"], current_step_idx=0)
-
-#     steps = coder_state.task_plan.implementation_steps
-#     if coder_state.current_step_idx >= len(steps):
-#         return {"coder_state": coder_state, "status": "DONE"}
-
-#     current_task = steps[coder_state.current_step_idx]
-#     existing_content = read_file.run(current_task.filepath)
-
-#     system_prompt = coder_system_prompt()
-#     user_prompt = (
-#         f"Task: {current_task.task_description}\n"
-#         f"File: {current_task.filepath}\n"
-#         f"Existing content:\n{existing_content}\n"
-#         "Use write_file(path, content) to save your changes."
-#     )
-
-#     coder_tools = [read_file, write_file, list_files, get_current_directory]
-#     # react_agent = create_react_agent(llm, coder_tools)
-#     react_agent = create_agent(llm, coder_tools)
-
-#     react_agent.invoke({"messages": [{"role": "system", "content": system_prompt},
-#                                      {"role": "user", "content": user_prompt}]})
-
-#     coder_state.current_step_idx += 1
-#     return {"coder_state": coder_state}
-
-
-# graph = StateGraph(dict)
-
-# graph.add_node("planner", planner_agent)
-# graph.add_node("architect", architect_agent)
-# graph.add_node("coder", coder_agent)
-
-# graph.add_edge("planner", "architect")
-# graph.add_edge("architect", "coder")
-# graph.add_conditional_edges(
-#     "coder",
-#     lambda s: "END" if s.get("status") == "DONE" else "coder",
-#     {"END": END, "coder": "coder"}
-# )
-
-# graph.set_entry_point("planner")
-# agent = graph.compile()
-# # user_prompt = "Build a colourful modern todo app in html css and js"
-# # result = agent.invoke({"user_prompt": user_prompt})
-# # print("Final State:", result)
-# # Build a colourful modern todo app in html css and js
-# # Create a simple calculator web application
-
-
-# if __name__ == "__main__":
-#     result = agent.invoke({"user_prompt": "Build a colourful modern todo app in html css and js"},
-#                           {"recursion_limit": 100})
-#     print("Final State:", result)
-
-
-
+Token-saving design for the Groq free tier:
+- Planner and Architect each make one structured-output call.
+- The Coder makes one plain call per file (no tool-calling loop), seeing only a
+  trimmed view of files already written.
+- Rate limits are handled by waiting and retrying; retired models fall back to the next one.
+"""
+import datetime
 import logging
 import os
 import pathlib
-import subprocess
-import datetime
 import uuid
-from typing import Tuple
+from typing import TypedDict
 
-from langchain_groq.chat_models import ChatGroq
-from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
+from langgraph.graph import END, StateGraph
 
-from agent.tools import write_file, read_file, get_current_directory, list_files, safe_path_for_project
-
-from langgraph.constants import END
-from langgraph.graph import StateGraph
 from agent import tools
-from agent.prompts import *
-from agent.states import *
+from agent.codegen import build_context, call_with_fallback, call_with_retry, strip_code_fences
+from agent.prompts import CODER_SYSTEM_PROMPT, architect_prompt, coder_prompt, planner_prompt
+from agent.states import Plan, TaskPlan
 
-
-# -------------------------------
-# Setup logging
-# -------------------------------
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Models are tried in order; override with comma-separated env vars.
+PLANNER_MODELS = [m.strip() for m in os.environ.get(
+    "CODEPILOT_PLANNER_MODELS", "openai/gpt-oss-120b,llama-3.3-70b-versatile").split(",") if m.strip()]
+CODER_MODELS = [m.strip() for m in os.environ.get(
+    "CODEPILOT_CODER_MODELS", "llama-3.3-70b-versatile,openai/gpt-oss-20b,llama-3.1-8b-instant").split(",") if m.strip()]
+MAX_IMPLEMENTATION_STEPS = int(os.environ.get("CODEPILOT_MAX_STEPS", "5"))
+MAX_FILE_TOKENS = int(os.environ.get("CODEPILOT_MAX_FILE_TOKENS", "3000"))
 
-# -------------------------------
-# Project folder management
-# -------------------------------
 BASE_PROJECTS_DIR = pathlib.Path.cwd() / "generated_projects"
-BASE_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-PROJECT_ROOT: pathlib.Path = None  # will be set each run
+
+
+class GraphState(TypedDict, total=False):
+    """Shared state: each node returns only the keys it changes."""
+    user_prompt: str
+    plan: Plan
+    task_plan: TaskPlan
+    step: int
+    written: dict
 
 
 def init_project_root(app_name: str = "project") -> str:
-    """Create a unique folder for each generated project."""
-    global PROJECT_ROOT
-
+    """Create a unique folder for one generated project and sandbox file writes to it."""
+    BASE_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = "".join(c if c.isalnum() else "_" for c in app_name)[:30] or "project"
-    PROJECT_ROOT = BASE_PROJECTS_DIR / f"{safe_name}_{timestamp}_{uuid.uuid4().hex[:6]}"
-    PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
-    
-    tools.set_project_root(PROJECT_ROOT)
-
-    logging.info(f"Initialized new project folder at {PROJECT_ROOT}")
-    return str(PROJECT_ROOT)
+    root = BASE_PROJECTS_DIR / f"{safe_name}_{timestamp}_{uuid.uuid4().hex[:6]}"
+    root.mkdir(parents=True, exist_ok=True)
+    tools.set_project_root(root)
+    logger.info("Initialized project folder at %s", root)
+    return str(root)
 
 
-# def safe_path_for_project(path: str) -> pathlib.Path:
-#     """Ensure the path stays inside PROJECT_ROOT."""
-#     if PROJECT_ROOT is None:
-#         raise RuntimeError("PROJECT_ROOT not initialized — call init_project_root() first.")
-#     p = (PROJECT_ROOT / path).resolve()
-#     if not p.is_relative_to(PROJECT_ROOT.resolve()):
-#         raise ValueError(f"Attempt to access path outside project root: {p}")
-#     return p
+def get_llm(api_key: str, model: str, max_tokens: int | None = None) -> ChatGroq:
+    # Retries are handled in call_with_retry so we can respect Groq's "try again in Xs".
+    return ChatGroq(model=model, api_key=api_key, max_retries=0, timeout=90, max_tokens=max_tokens, temperature=0.2)
 
 
-# # -------------------------------
-# # File Tools
-# # -------------------------------
-# @tool
-# def write_file(path: str, content: str) -> str:
-#     """Writes content to a file inside the project folder."""
-#     p = safe_path_for_project(path)
-#     p.parent.mkdir(parents=True, exist_ok=True)
-#     with open(p, "w", encoding="utf-8") as f:
-#         f.write(content)
-#     return f"WROTE: {p}"
+def build_agent(api_key: str, llm_factory=get_llm, on_event=None):
+    """Build the LangGraph workflow.
 
+    llm_factory(api_key, model, max_tokens) -> chat model; injectable for tests.
+    on_event(kind, detail) is an optional progress callback for the UI.
+    """
+    def emit(kind: str, detail: str = "") -> None:
+        if on_event:
+            on_event(kind, detail)
 
-# @tool
-# def read_file(path: str) -> str:
-#     """Reads content from a file inside the project folder."""
-#     p = safe_path_for_project(path)
-#     return p.read_text(encoding="utf-8") if p.exists() else ""
+    def wait_note(seconds: float) -> None:
+        emit("waiting", f"Groq rate limit reached, waiting {seconds:.0f}s and retrying...")
 
-
-# @tool
-# def list_files(directory: str = ".") -> str:
-#     """Lists all files inside the project folder."""
-#     p = safe_path_for_project(directory)
-#     if not p.is_dir():
-#         return f"ERROR: {p} is not a directory"
-#     return "\n".join(str(f.relative_to(PROJECT_ROOT)) for f in p.glob("**/*") if f.is_file()) or "No files found."
-
-
-# @tool
-# def get_current_directory() -> str:
-#     """Returns the current project folder path."""
-#     return str(PROJECT_ROOT)
-
-
-# @tool
-# def run_cmd(cmd: str, cwd: str = None, timeout: int = 30) -> Tuple[int, str, str]:
-#     """Run a shell command in the project folder."""
-#     cwd_dir = safe_path_for_project(cwd) if cwd else PROJECT_ROOT
-#     res = subprocess.run(
-#         cmd, shell=True, cwd=str(cwd_dir),
-#         capture_output=True, text=True, timeout=timeout
-#     )
-#     return res.returncode, res.stdout, res.stderr
-
-
-# -------------------------------
-# LLM Setup
-# -------------------------------
-# Larger model plans; a smaller, faster model writes code. Fewer tokens per run
-# means fewer rate-limit failures on the free tier. Override with env vars.
-PLANNER_MODEL = os.environ.get("CODEPILOT_PLANNER_MODEL", "openai/gpt-oss-120b")
-CODER_MODEL = os.environ.get("CODEPILOT_CODER_MODEL", "openai/gpt-oss-20b")
-MAX_IMPLEMENTATION_STEPS = int(os.environ.get("CODEPILOT_MAX_STEPS", "8"))
-
-
-def get_llm(api_key: str, model: str = PLANNER_MODEL):
-    """Return a ChatGroq client with retries for brief rate limits."""
-    return ChatGroq(model=model, groq_api_key=api_key, max_retries=2, timeout=60)
-
-
-# -------------------------------
-# Build LangGraph Agent
-# -------------------------------
-def build_agent(api_key: str):
-    """Build and return the LangGraph workflow."""
-    llm = get_llm(api_key, PLANNER_MODEL)
-    coder_llm = get_llm(api_key, CODER_MODEL)
-    shared_tools = [read_file, write_file, list_files, get_current_directory]
+    def structured(models, schema, prompt):
+        def make_call(model):
+            llm = llm_factory(api_key, model, None).with_structured_output(schema)
+            return call_with_retry(lambda: llm.invoke(prompt), on_wait=wait_note)
+        result = call_with_fallback(models, make_call)
+        if result is None:
+            raise ValueError(f"The model returned no {schema.__name__}.")
+        return result
 
     def planner_agent(state: dict) -> dict:
-        user_prompt = state["user_prompt"]
-        resp = llm.with_structured_output(Plan).invoke(planner_prompt(user_prompt))
-        if resp is None:
-            raise ValueError("Planner did not return a valid response.")
-        return {"plan": resp}
+        emit("stage", "Planner is designing the app...")
+        plan = structured(PLANNER_MODELS, Plan, planner_prompt(state["user_prompt"], MAX_IMPLEMENTATION_STEPS))
+        return {"plan": plan}
 
     def architect_agent(state: dict) -> dict:
+        emit("stage", "Architect is breaking the plan into files...")
         plan: Plan = state["plan"]
-        resp = llm.with_structured_output(TaskPlan).invoke(architect_prompt(plan=plan.model_dump_json()))
-        if resp is None:
-            raise ValueError("Architect did not return a valid response.")
-        resp.plan = plan
-        # Cap the number of files so a run stays fast and within free-tier limits.
-        resp.implementation_steps = resp.implementation_steps[:MAX_IMPLEMENTATION_STEPS]
-        return {"task_plan": resp}
+        task_plan = structured(
+            PLANNER_MODELS, TaskPlan, architect_prompt(plan.model_dump_json(), MAX_IMPLEMENTATION_STEPS))
+        # One task per file, capped, so a run stays fast and inside free-tier limits.
+        seen, steps = set(), []
+        for step in task_plan.implementation_steps:
+            if step.filepath not in seen:
+                seen.add(step.filepath)
+                steps.append(step)
+        task_plan.implementation_steps = steps[:MAX_IMPLEMENTATION_STEPS]
+        if not task_plan.implementation_steps:
+            raise ValueError("The architect produced no files to write.")
+        return {"task_plan": task_plan, "step": 0, "written": {}}
 
     def coder_agent(state: dict) -> dict:
-        coder_state: CoderState = state.get("coder_state") or CoderState(task_plan=state["task_plan"], current_step_idx=0)
-        steps = coder_state.task_plan.implementation_steps
+        plan: Plan = state["plan"]
+        steps = state["task_plan"].implementation_steps
+        idx = state["step"]
+        task = steps[idx]
+        emit("file", f"Coder is writing {task.filepath} ({idx + 1}/{len(steps)})")
 
-        if coder_state.current_step_idx >= len(steps):
-            return {"coder_state": coder_state, "status": "DONE"}
+        all_files = "\n".join(f"- {s.filepath}: {s.task_description[:160]}" for s in steps)
+        summary = f"{plan.name}: {plan.description}. Features: {'; '.join(plan.features)}"
+        messages = [
+            SystemMessage(content=CODER_SYSTEM_PROMPT),
+            HumanMessage(content=coder_prompt(
+                summary, all_files, task.filepath, task.task_description, build_context(state["written"]))),
+        ]
 
-        current_task = steps[coder_state.current_step_idx]
-        existing_content = read_file.run(current_task.filepath)
-        system_prompt = coder_system_prompt()
+        def make_call(model):
+            llm = llm_factory(api_key, model, MAX_FILE_TOKENS)
+            return call_with_retry(lambda: llm.invoke(messages), on_wait=wait_note)
 
-        user_prompt = (
-            f"Task: {current_task.task_description}\n"
-            f"File: {current_task.filepath}\n"
-            f"Existing content:\n{existing_content}\n"
-            "Use write_file(path, content) to save your changes."
-        )
+        response = call_with_fallback(CODER_MODELS, make_call)
+        content = strip_code_fences(getattr(response, "content", str(response)))
+        tools.write_file(task.filepath, content)
+        written = {**state["written"], task.filepath: content}
+        return {"written": written, "step": idx + 1}
 
-        react_agent = create_agent(coder_llm, shared_tools)
-        react_agent.invoke({
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-        })
-
-        coder_state.current_step_idx += 1
-        return {"coder_state": coder_state}
-
-    # -------------------------------
-    # Build LangGraph flow
-    # -------------------------------
-    graph = StateGraph(dict)
+    graph = StateGraph(GraphState)
     graph.add_node("planner", planner_agent)
     graph.add_node("architect", architect_agent)
     graph.add_node("coder", coder_agent)
-
+    graph.set_entry_point("planner")
     graph.add_edge("planner", "architect")
     graph.add_edge("architect", "coder")
     graph.add_conditional_edges(
         "coder",
-        lambda s: "END" if s.get("status") == "DONE" else "coder",
-        {"END": END, "coder": "coder"}
+        lambda s: END if s["step"] >= len(s["task_plan"].implementation_steps) else "coder",
     )
-    graph.set_entry_point("planner")
-
     return graph.compile()

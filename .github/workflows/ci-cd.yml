@@ -2,176 +2,70 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
 
-env:
-  IMAGE_NAME: codepilot
+permissions:
+  contents: read
 
 jobs:
-  build-test:
+  test:
+    name: Lint and test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      - name: Install dev dependencies (best-effort)
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
-          pip install flake8 pytest || true
+          pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run linter (non-blocking)
-        run: |
-          if command -v flake8 >/dev/null 2>&1; then
-            flake8 || echo "flake8 issues (non-blocking)."
-          else
-            echo "flake8 not installed"
-          fi
+      - name: Lint (syntax errors, undefined names, unused imports)
+        run: ruff check --select E9,F63,F7,F82,F401 .
 
-      - name: Run tests (non-blocking)
-        run: |
-          if [ -f "pyproject.toml" ] || [ -d "tests" ]; then
-            pytest -q || echo "pytest failed (non-blocking)."
-          else
-            echo "No tests found - skipping"
-          fi
+      - name: Run tests
+        run: pytest -q
 
-  build-and-push:
-    needs: build-test
+  docker:
+    name: Build and push Docker image
+    needs: test
     runs-on: ubuntu-latest
-    # IMAGE_NAME provided from top-level env; available in run via $IMAGE_NAME
-    outputs:
-      image_full: ${{ steps.build_and_push.outputs.image_full }}
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up QEMU (optional for multi-arch)
-        uses: docker/setup-qemu-action@v2
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to registry (GHCR or Docker Hub)
-        id: registry-login
-        run: |
-          # Decide registry in-shell. Use Docker Hub if DOCKERHUB_USERNAME secret exists, otherwise GHCR.
-          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
-            echo "Using Docker Hub"
-            echo "REGISTRY_TYPE=dockerhub" >> $GITHUB_ENV
-            echo "REGISTRY_HOST=docker.io" >> $GITHUB_ENV
-            echo "REGISTRY_USER=${{ secrets.DOCKERHUB_USERNAME }}" >> $GITHUB_ENV
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-          else
-            echo "Using GHCR"
-            echo "REGISTRY_TYPE=ghcr" >> $GITHUB_ENV
-            echo "REGISTRY_HOST=ghcr.io" >> $GITHUB_ENV
-            echo "REGISTRY_USER=${{ github.actor }}" >> $GITHUB_ENV
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          fi
-
-      - name: Build and push image
-        id: build_and_push
-        run: |
-          # Build image name using shell variables only, ensure lowercase owner & image
-          IMAGE_TAG=${GITHUB_SHA}
-
-          # Get repo owner from the workflow context and lowercase it for Docker tag rules
-          REPO_OWNER="${{ github.repository_owner }}"
-          OWNER_LOWER="$(echo "${REPO_OWNER}" | tr '[:upper:]' '[:lower:]')"
-
-          # Ensure IMAGE_NAME is lowercase too (defensive)
-          IMAGE_NAME_LOWER="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
-
-          echo "Repo owner (original): ${REPO_OWNER}"
-          echo "Repo owner (lowercased): ${OWNER_LOWER}"
-          echo "Image name (lowercased): ${IMAGE_NAME_LOWER}"
-          echo "Registry type: ${REGISTRY_TYPE}"
-          echo "Registry host: ${REGISTRY_HOST}"
-
-          if [ "${REGISTRY_TYPE}" = "dockerhub" ]; then
-            IMAGE_FULL="${REGISTRY_USER}/${IMAGE_NAME_LOWER}:${IMAGE_TAG}"
-          else
-            IMAGE_FULL="${REGISTRY_HOST}/${OWNER_LOWER}/${IMAGE_NAME_LOWER}:${IMAGE_TAG}"
-          fi
-
-          echo "Building image ${IMAGE_FULL}"
-          docker build -t "${IMAGE_FULL}" .
-
-          echo "Pushing ${IMAGE_FULL}"
-          docker push "${IMAGE_FULL}"
-
-          # export as step output for job-level output
-          echo "image_full=${IMAGE_FULL}" >> $GITHUB_OUTPUT
-
-      - name: Publish latest tag (only on main)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          IMAGE_FULL="${{ steps.build_and_push.outputs.image_full }}"
-          if [ -z "${IMAGE_FULL}" ]; then
-            echo "No built image found; skipping tag."
-            exit 0
-          fi
-
-          if [ "${REGISTRY_TYPE}" = "dockerhub" ]; then
-            LATEST="${REGISTRY_USER}/${IMAGE_NAME}:latest"
-          else
-            LATEST="${REGISTRY_HOST}/${{ github.repository_owner }}/${IMAGE_NAME}:latest"
-          fi
-
-          echo "Tagging ${IMAGE_FULL} as ${LATEST}"
-          docker tag "${IMAGE_FULL}" "${LATEST}"
-          docker push "${LATEST}" || echo "Push latest failed (non-blocking)."
-
-  deploy-ssh:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Decide whether to deploy (set step output)
-        id: check
-        run: |
-          # If any required secret is missing, mark deploy=false
-          if [ -z "${{ secrets.REMOTE_HOST }}" ] || [ -z "${{ secrets.REMOTE_USER }}" ] || [ -z "${{ secrets.REMOTE_SSH_KEY }}" ]; then
-            echo "deploy=false" >> $GITHUB_OUTPUT
-            echo "Missing one or more deploy secrets (REMOTE_HOST, REMOTE_USER, REMOTE_SSH_KEY). Skipping deploy."
-            exit 0
-          fi
-          echo "deploy=true" >> $GITHUB_OUTPUT
-          echo "All deploy secrets present."
-
-      - name: Setup SSH key
-        if: ${{ steps.check.outputs.deploy == 'true' }}
-        uses: webfactory/ssh-agent@v0.8.1
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
         with:
-          ssh-private-key: ${{ secrets.REMOTE_SSH_KEY }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull & restart on remote host
-        if: ${{ steps.check.outputs.deploy == 'true' }}
-        env:
-          IMAGE_FULL: ${{ needs.build-and-push.outputs.image_full }}
-          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-          REMOTE_USER: ${{ secrets.REMOTE_USER }}
-        run: |
-          if [ -z "${IMAGE_FULL}" ]; then
-            echo "No image to deploy. Aborting deploy step."
-            exit 0
-          fi
+      - name: Image tags (lowercase, as Docker requires)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/codepilot
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
 
-          echo "Deploying ${IMAGE_FULL} to ${REMOTE_USER}@${REMOTE_HOST}"
-
-          # Use SSH to pull & run (adapt as needed to docker-compose / systemd)
-          ssh -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" <<'EOF'
-            docker pull '"${IMAGE_FULL}"' || true
-            docker stop codepilot || true
-            docker rm codepilot || true
-            docker run -d --name codepilot -p 8501:8501 \
-              -e STREAMLIT_SERVER_HEADLESS=true \
-              -e STREAMLIT_SERVER_PORT=8501 \
-              --restart unless-stopped '"${IMAGE_FULL}"'
-          EOF
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -14,7 +14,15 @@ CodePilot uses a **multi-agent architecture** to simulate real-world software de
 
 - **🗺️ Planner Agent** — Understands your prompt and creates a detailed project roadmap.  
 - **🏗️ Architect Agent** — Breaks the roadmap into granular engineering tasks and assigns responsibilities for each file.  
-- **💻 Coder Agent** — Implements those tasks, writes code files, and executes necessary commands to assemble the project.  
+- **💻 Coder Agent** — Writes each file in one focused call, seeing a trimmed view of the files already written so names and IDs stay consistent.
+
+### Built to run on the Groq free tier
+
+- **One call per file** instead of a tool-calling loop, so a 5-file app uses a small, predictable number of tokens.
+- **Rate-limit aware:** when Groq says "try again in Xs", CodePilot waits that long and retries (up to 4 times).
+- **Model fallback:** if a model is retired, it moves to the next one in the list.
+- **Sandboxed writes:** generated files can only be written inside their own project folder.
+- **Live preview:** generated HTML/CSS/JS apps run right inside the page.
 
 
 ---
@@ -24,7 +32,7 @@ CodePilot uses a **multi-agent architecture** to simulate real-world software de
 | Component | Description |
 |------------|-------------|
 | 🧩 **LangGraph** | For orchestrating agent workflows |
-| 🧠 **LangChain** | For structured LLM reasoning and tool usage |
+| 🧠 **LangChain Core** | Structured outputs (Pydantic) for the plan and task list |
 | ⚡ **Groq API** | High-speed inference for chat-based reasoning |
 | 🖥️ **Streamlit** | Clean, interactive web interface |
 | 🧰 **Python 3.12+** | Core language for logic and execution |
@@ -80,7 +88,7 @@ python main.py
 
 Try these in your deployed or local app:
 
-- “Build a to-do list web app using React and FastAPI.”
+- “Build a quiz app with 5 questions and a final score.”
 
 - “Create a calculator web app in HTML, CSS, and JavaScript.”
 
@@ -104,3 +112,28 @@ After generation, CodePilot provides:
 - 🗂️ A project folder under /tmp/generated_projects (on Vercel)
 
 - 💾 A downloadable .zip file containing your ready-to-run app
+
+---
+
+## ✅ Tests and CI/CD
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -q
+```
+
+GitHub Actions runs lint and tests on every push and pull request, then builds the Docker image and pushes it to GitHub Container Registry (`ghcr.io/<owner>/codepilot`) on `main`.
+
+Run the image locally:
+
+```bash
+docker run -p 8501:8501 -e GROQ_API_KEY=your_key ghcr.io/anushkajoshii/codepilot:latest
+```
+
+### Configuration (optional environment variables)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CODEPILOT_PLANNER_MODELS` | `openai/gpt-oss-120b,llama-3.3-70b-versatile` | Models for planning, tried in order |
+| `CODEPILOT_CODER_MODELS` | `llama-3.3-70b-versatile,openai/gpt-oss-20b,llama-3.1-8b-instant` | Models for writing files, tried in order |
+| `CODEPILOT_MAX_STEPS` | `5` | Maximum number of files per project |

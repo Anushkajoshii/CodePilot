@@ -16,3 +16,8 @@ build/
 .DS_Store
 .idea
 .vscode
+generated_projects/
+tests/
+.github/
+.streamlit/
+*.db
