@@ -1,5 +1,7 @@
 # 🚀 CodePilot
 
+**Live demo:** https://codepilott.streamlit.app (open the *See examples* tab to try it without an API key)
+
 **CodePilot** is your AI-powered developer buddy — built with **LangGraph**, **LangChain**, and **Groq Cloud**.  
 It acts like a multi-agent development team that can take a natural language request such as  
 _“Build a calculator web app”_ and automatically generate a **complete, working project** — file by file — just like a real coder.

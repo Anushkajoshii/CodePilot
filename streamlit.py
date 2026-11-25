@@ -1,12 +1,14 @@
 
 import streamlit as st
 import traceback
+import io
+import zipfile
 import shutil
 import tempfile
 import os
 from pathlib import Path
 
-from agent.graph import build_agent, init_project_root
+from agent.graph import build_agent, init_project_root, MAX_IMPLEMENTATION_STEPS
 
 
 def zip_project_folder(project_path: str):
@@ -25,83 +27,60 @@ def zip_project_folder(project_path: str):
     shutil.make_archive(zip_path.replace(".zip", ""), "zip", project_dir)
     return zip_path
 
-
-# def main():
-#     st.set_page_config(page_title="CodePilot", page_icon="🤖", layout="wide")
-
-#     st.title("🤖 CodePilot – Your AI Co-Pilot for App Generation")
-#     st.write("Generate AI or web projects using LangGraph + Groq.")
-
-#     with st.sidebar:
-#         st.header("⚙️ Settings")
-#         api_key = st.text_input("🔑 Groq API Key", type="password", placeholder="gsk_...")
-#         recursion_limit = st.number_input("Recursion Limit", min_value=10, max_value=1000, value=100)
-#         project_name = st.text_input("🧱 Project Name", placeholder="my_ai_app")
-
-#     user_prompt = st.text_area(
-#         "🧾 Project Description",
-#         placeholder="e.g. Build a web-based calculator using Flask",
-#         height=150,
-#     )
-
-#     if st.button("🚀 Generate Project", use_container_width=True):
-#         if not user_prompt.strip():
-#             st.warning("Please enter a project description.")
-#             st.stop()
-#         if not api_key.strip():
-#             st.warning("Please enter your Groq API key.")
-#             st.stop()
-
-#         try:
-#             st.info("🧱 Initializing project...")
-#             project_path = init_project_root(project_name or "project")
-#             if not project_path:
-#                 st.error("❌ Failed to initialize project folder.")
-#                 st.stop()
-
-#             st.info("🤖 Running agent... This may take a few minutes ⏳")
-#             agent = build_agent(api_key)
-
-#             with st.spinner("Generating your project..."):
-#                 result = agent.invoke(
-#                     {"user_prompt": user_prompt},
-#                     {"recursion_limit": recursion_limit},
-#                 )
-
-#             st.success("✅ Project generation completed successfully!")
-#             st.subheader("📋 Final State:")
-#             st.json(result)
-
-#             st.info("📦 Packaging your project files...")
-#             zip_path = zip_project_folder(project_path)
-
-#             if zip_path and os.path.exists(zip_path):
-#                 with open(zip_path, "rb") as f:
-#                     st.download_button(
-#                         "⬇️ Download Project ZIP",
-#                         data=f,
-#                         file_name=f"{Path(project_path).name}.zip",
-#                         mime="application/zip",
-#                         use_container_width=True,
-#                     )
-#                 st.success("🎉 Your project is ready to download!")
-#             else:
-#                 st.warning("⚠️ No project files found to package.")
-
-#         except Exception as e:
-#             st.error("❌ An unexpected error occurred.")
-#             st.text("Detailed Traceback:")
-#             st.code(traceback.format_exc(), language="python")
-#     # Footer
-#     st.divider()
-#     st.markdown(
-#         "<p style='text-align: center;'>Made by <b>Anushka Joshi</b>.</p>", 
-#         unsafe_allow_html=True
-#     )
+# ---------------- Examples (no API key needed) ----------------
+EXAMPLES_DIR = Path(__file__).parent / "examples"
+EXAMPLES = {
+    "Todo app": {"folder": "todo_app", "idea": "A simple to-do list web app"},
+    "Sketching app": {"folder": "sketching_app", "idea": "A browser drawing app with a canvas"},
+    "Tic-tac-toe": {"folder": "tictactoe", "idea": "A two-player tic-tac-toe game"},
+}
 
 
-# if __name__ == "__main__":
-#     main()
+def read_example_files(folder: str) -> dict:
+    """Return {relative_path: text} for every file in an example project."""
+    root = EXAMPLES_DIR / folder
+    return {
+        str(p.relative_to(root)): p.read_text(encoding="utf-8", errors="replace")
+        for p in sorted(root.rglob("*")) if p.is_file()
+    }
+
+
+def preview_html(files: dict) -> str:
+    """Inline CSS and JS into index.html so the example runs inside the page."""
+    html = files.get("index.html", "")
+    for path, text in files.items():
+        if path.endswith(".css"):
+            html = html.replace(f'<link rel="stylesheet" href="{path}">', f"<style>{text}</style>")
+        elif path.endswith(".js"):
+            html = html.replace(f'<script src="{path}"></script>', f"<script>{text}</script>")
+    return html
+
+
+def zip_bytes(files: dict) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path, text in files.items():
+            zf.writestr(path, text)
+    return buffer.getvalue()
+
+
+def get_server_key() -> str:
+    try:
+        return st.secrets.get("GROQ_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
+    except Exception:
+        return os.environ.get("GROQ_API_KEY", "")
+
+
+def friendly_error(exc: Exception) -> str:
+    text = str(exc).lower()
+    if "rate limit" in text or "rate_limit" in text or "429" in text or "tokens per" in text:
+        return ("The free AI limit has been reached for now. Please try again in a few minutes, "
+                "add your own Groq API key in the sidebar, or open the examples tab.")
+    if "invalid api key" in text or "401" in text or "authentication" in text:
+        return "That Groq API key didn't work. Please check it and try again."
+    if "recursion" in text:
+        return "The agent needed more steps than allowed. Try a smaller idea or raise the step limit."
+    return "Something went wrong while generating the project. Please try again with a shorter, clearer idea."
 
 
 def main():
@@ -241,101 +220,109 @@ textarea:focus, input:focus {
 """, unsafe_allow_html=True)
 
 
+
     # ---------------- Header ----------------
     st.markdown("<h1 class='title'>🤖 CodePilot</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'><b>Your AI copilot for app generation</b></p>", unsafe_allow_html=True)
-    st.markdown("<p class='muted'>Generate AI or web projects using <b>LangGraph + Groq</b></p>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'><b>Three AI agents that turn an idea into a working project</b></p>", unsafe_allow_html=True)
+    st.markdown("<p class='muted'>Planner → Architect → Coder, built with <b>LangGraph</b> and <b>Groq</b></p>", unsafe_allow_html=True)
     st.write("")
+
+    server_key = get_server_key()
 
     # ---------------- Sidebar ----------------
     with st.sidebar:
         st.header("⚙️ Settings")
-
-        api_key = st.text_input("🔑 Groq API Key", type="password", placeholder="gsk_...")
-        st.caption("Your Groq API key is required to use the Groq model for app generation.")
-
+        user_key = st.text_input("🔑 Your Groq API key (optional)", type="password", placeholder="gsk_...")
+        if server_key:
+            st.caption("Optional: a shared demo key is available, limited to one project per visit. Add your own free key from console.groq.com for more.")
+        else:
+            st.caption("Get a free key at console.groq.com. Or try the examples tab, which needs no key.")
         recursion_limit = st.number_input(
-            "🔁 Recursion Limit",
-            min_value=10, max_value=1000, value=100,
-            help=(
-                "Defines how deep the AI can recursively generate or refine project components.\n\n"
-                "- Lower = Faster, simpler generations.\n"
-                "- Higher = More complex, detailed outputs (but slower)."
-            )
+            "🔁 Step limit", min_value=10, max_value=150, value=60,
+            help="The most steps the agents may take. Lower is faster and uses fewer tokens.",
+        )
+        project_name = st.text_input("🧱 Project name", placeholder="my_app")
+        st.markdown("---")
+        st.caption(f"Projects are capped at {MAX_IMPLEMENTATION_STEPS} files to keep runs fast and within free limits.")
+
+    tab_examples, tab_generate = st.tabs(["👀 See examples (no key needed)", "🚀 Generate your own"])
+
+    # ---------------- Examples ----------------
+    with tab_examples:
+        st.markdown("These projects were generated by CodePilot. Pick one to see the code, run it, and download it.")
+        choice = st.selectbox("Example", list(EXAMPLES.keys()))
+        example = EXAMPLES[choice]
+        files = read_example_files(example["folder"])
+        st.markdown(f"**Idea given to the agents:** {example['idea']}")
+        col_code, col_preview = st.columns(2)
+        with col_code:
+            st.markdown(f"**Files created ({len(files)})**")
+            for path, text in files.items():
+                with st.expander(path):
+                    lang = path.rsplit(".", 1)[-1].replace("jsx", "javascript").replace("js", "javascript").replace("md", "markdown")
+                    st.code(text, language=lang)
+        with col_preview:
+            st.markdown("**Live preview**")
+            if "index.html" in files:
+                st.components.v1.html(preview_html(files), height=480, scrolling=True)
+        st.download_button(
+            "⬇️ Download this example", data=zip_bytes(files),
+            file_name=f"{example['folder']}.zip", mime="application/zip", use_container_width=True,
         )
 
-        project_name = st.text_input("🧱 Project Name", placeholder="my_ai_app")
-        st.caption("This will be used to create a folder for your generated project.")
+    # ---------------- Generate ----------------
+    with tab_generate:
+        st.markdown("### ✨ Describe your project")
+        user_prompt = st.text_area(
+            "🧾 Project description",
+            placeholder="e.g. A pomodoro timer web app with start, pause and reset buttons",
+            height=130,
+        )
+        with st.expander("💬 Example ideas"):
+            st.markdown(
+                "- A to-do list web app with local storage\n"
+                "- A simple calculator in HTML, CSS and JavaScript\n"
+                "- A quiz app with 5 questions and a score at the end"
+            )
 
-        st.markdown("---")
-        st.caption("💡 Tip: Use a clear, detailed prompt for best results.")
-
-    # ---------------- Main Input ----------------
-    st.markdown("### ✨ Describe Your Project")
-    user_prompt = st.text_area(
-        "🧾 Project Description",
-        placeholder="e.g. Build a web-based calculator using Flask and deploy it to Streamlit Cloud.",
-        height=150,
-    )
-
-    # 🧩 Example Prompts Section
-    with st.expander("💬 Example Prompts (click to view)", expanded=False):
-        st.markdown("""
-        - Create a to-do list web app using React and FastAPI  
-        - Build a simple calculator using JavaScript  
-        - Develop a simple blogging app with Flask and SQLite
-        """)
-
-    # ---------------- Generate Button ----------------
-    if st.button("🚀 Generate Project", use_container_width=True):
-        if not user_prompt.strip():
-            st.warning("Please enter a project description.")
-            st.stop()
-        if not api_key.strip():
-            st.warning("Please enter your Groq API key.")
-            st.stop()
-
-        try:
-            st.info("🧱 Initializing project...")
-            project_path = init_project_root(project_name or "project")
-
-            if not project_path:
-                st.error("❌ Failed to initialize project folder.")
+        if st.button("🚀 Generate project", use_container_width=True):
+            api_key = user_key.strip()
+            if not user_prompt.strip():
+                st.warning("Please describe your project first.")
                 st.stop()
+            if not api_key:
+                if not server_key:
+                    st.warning("Please add a Groq API key in the sidebar, or try the examples tab.")
+                    st.stop()
+                if st.session_state.get("used_demo_key"):
+                    st.info("The shared demo key allows one project per visit. Add your own free Groq key in the sidebar to keep going.")
+                    st.stop()
+                st.session_state["used_demo_key"] = True
+                api_key = server_key
 
-            st.info("🤖 Running agent... This may take a few minutes ⏳")
-            agent = build_agent(api_key)
+            try:
+                project_path = init_project_root(project_name or "project")
+                agent = build_agent(api_key)
+                with st.spinner("🪄 The agents are planning and writing your project. This can take a minute or two..."):
+                    result = agent.invoke({"user_prompt": user_prompt}, {"recursion_limit": int(recursion_limit)})
 
-            with st.spinner("🪄 Generating your project..."):
-                result = agent.invoke(
-                    {"user_prompt": user_prompt},
-                    {"recursion_limit": recursion_limit},
-                )
-
-            st.success("🎉 Project generation completed successfully!")
-            with st.expander("📋 View Final Agent Output", expanded=False):
-                st.json(result)
-
-            st.info("📦 Packaging your project files...")
-            zip_path = zip_project_folder(project_path)
-
-            if zip_path and os.path.exists(zip_path):
-                with open(zip_path, "rb") as f:
-                    st.download_button(
-                        "⬇️ Download Project ZIP",
-                        data=f,
-                        file_name=f"{Path(project_path).name}.zip",
-                        mime="application/zip",
-                        use_container_width=True,
-                    )
-                st.balloons()
-                st.success("🎊 Your project is ready to download!")
-            else:
-                st.warning("⚠️ No project files found to package.")
-
-        except Exception as e:
-            st.error("❌ Oops, something went wrong.")
-            st.code(traceback.format_exc(), language="python")
+                zip_path = zip_project_folder(project_path)
+                if zip_path and os.path.exists(zip_path):
+                    st.success("🎉 Your project is ready.")
+                    with open(zip_path, "rb") as f:
+                        st.download_button(
+                            "⬇️ Download project ZIP", data=f,
+                            file_name=f"{Path(project_path).name}.zip",
+                            mime="application/zip", use_container_width=True,
+                        )
+                    with st.expander("📋 Agent output (plan and tasks)"):
+                        st.json(result, expanded=False)
+                else:
+                    st.warning("The agents finished but no files were written. Try a clearer, smaller idea.")
+            except Exception as exc:
+                st.error(friendly_error(exc))
+                with st.expander("Technical details"):
+                    st.code(traceback.format_exc(limit=3), language="text")
 
     # ---------------- Footer ----------------
     st.markdown("---")

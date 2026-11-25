@@ -107,6 +107,7 @@
 
 
 import logging
+import os
 import pathlib
 import subprocess
 import datetime
@@ -213,9 +214,16 @@ def init_project_root(app_name: str = "project") -> str:
 # -------------------------------
 # LLM Setup
 # -------------------------------
-def get_llm(api_key: str):
-    """Return ChatGroq LLM instance using provided API key."""
-    return ChatGroq(model="openai/gpt-oss-120b", groq_api_key=api_key)
+# Larger model plans; a smaller, faster model writes code. Fewer tokens per run
+# means fewer rate-limit failures on the free tier. Override with env vars.
+PLANNER_MODEL = os.environ.get("CODEPILOT_PLANNER_MODEL", "openai/gpt-oss-120b")
+CODER_MODEL = os.environ.get("CODEPILOT_CODER_MODEL", "openai/gpt-oss-20b")
+MAX_IMPLEMENTATION_STEPS = int(os.environ.get("CODEPILOT_MAX_STEPS", "8"))
+
+
+def get_llm(api_key: str, model: str = PLANNER_MODEL):
+    """Return a ChatGroq client with retries for brief rate limits."""
+    return ChatGroq(model=model, groq_api_key=api_key, max_retries=2, timeout=60)
 
 
 # -------------------------------
@@ -223,7 +231,8 @@ def get_llm(api_key: str):
 # -------------------------------
 def build_agent(api_key: str):
     """Build and return the LangGraph workflow."""
-    llm = get_llm(api_key)
+    llm = get_llm(api_key, PLANNER_MODEL)
+    coder_llm = get_llm(api_key, CODER_MODEL)
     shared_tools = [read_file, write_file, list_files, get_current_directory]
 
     def planner_agent(state: dict) -> dict:
@@ -239,6 +248,8 @@ def build_agent(api_key: str):
         if resp is None:
             raise ValueError("Architect did not return a valid response.")
         resp.plan = plan
+        # Cap the number of files so a run stays fast and within free-tier limits.
+        resp.implementation_steps = resp.implementation_steps[:MAX_IMPLEMENTATION_STEPS]
         return {"task_plan": resp}
 
     def coder_agent(state: dict) -> dict:
@@ -259,7 +270,7 @@ def build_agent(api_key: str):
             "Use write_file(path, content) to save your changes."
         )
 
-        react_agent = create_agent(llm, shared_tools)
+        react_agent = create_agent(coder_llm, shared_tools)
         react_agent.invoke({
             "messages": [
                 {"role": "system", "content": system_prompt},

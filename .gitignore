@@ -28,9 +28,6 @@ build/
 # --- Project Outputs ---
 generated_projects/
 test_*/
-todo_generated_project/
-sketching_app/
-tictactoe/
 
 # --- Streamlit ---
 .streamlit/
