@@ -7,6 +7,7 @@ Token-saving design for the Groq free tier:
 - Rate limits are handled by waiting and retrying; retired models fall back to the next one.
 """
 import datetime
+import json
 import logging
 import os
 import pathlib
@@ -18,7 +19,9 @@ from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 
 from agent import tools
-from agent.codegen import build_context, call_with_fallback, call_with_retry, strip_code_fences
+from agent.codegen import (
+    BadOutputError, build_context, call_with_fallback, call_with_retry, is_bad_output, strip_code_fences,
+)
 from agent.prompts import CODER_SYSTEM_PROMPT, architect_prompt, coder_prompt, planner_prompt
 from agent.states import Plan, TaskPlan
 
@@ -76,13 +79,37 @@ def build_agent(api_key: str, llm_factory=get_llm, on_event=None):
         emit("waiting", f"Groq rate limit reached, waiting {seconds:.0f}s and retrying...")
 
     def structured(models, schema, prompt):
+        """Get a Pydantic object from the model.
+
+        Models sometimes answer in prose instead of calling the schema tool
+        (Groq then returns 400 'tool_use_failed'). For each model we try tool
+        calling first, then plain JSON mode; if both fail, the next model.
+        """
+        json_prompt = (
+            prompt
+            + "\n\nRespond with ONLY a JSON object (no markdown, no prose) that matches this JSON schema:\n"
+            + json.dumps(schema.model_json_schema())
+        )
+        attempts = (("function_calling", prompt), ("json_mode", json_prompt))
+
         def make_call(model):
-            llm = llm_factory(api_key, model, None).with_structured_output(schema)
-            return call_with_retry(lambda: llm.invoke(prompt), on_wait=wait_note)
-        result = call_with_fallback(models, make_call)
-        if result is None:
-            raise ValueError(f"The model returned no {schema.__name__}.")
-        return result
+            last_exc = None
+            for method, text in attempts:
+                try:
+                    llm = llm_factory(api_key, model, None).with_structured_output(schema, method=method)
+                    result = call_with_retry(lambda llm=llm, text=text: llm.invoke(text), on_wait=wait_note)
+                    if result is not None:
+                        return result
+                    last_exc = BadOutputError(f"{model} returned no {schema.__name__}")
+                except Exception as exc:  # noqa: BLE001
+                    if not is_bad_output(exc):
+                        raise
+                    logger.warning("%s gave unusable %s output via %s: %s", model, schema.__name__, method, exc)
+                    last_exc = exc
+                emit("retry", f"Reformatting the {schema.__name__} answer and trying again...")
+            raise BadOutputError(f"{model} could not produce a valid {schema.__name__}") from last_exc
+
+        return call_with_fallback(models, make_call)
 
     def planner_agent(state: dict) -> dict:
         emit("stage", "Planner is designing the app...")

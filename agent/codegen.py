@@ -18,6 +18,24 @@ class RateLimitError(RuntimeError):
     """Raised when the provider keeps rate-limiting after all retries."""
 
 
+class BadOutputError(RuntimeError):
+    """Raised when a model keeps answering in the wrong format (e.g. prose instead of JSON)."""
+
+
+def is_bad_output(exc: Exception) -> bool:
+    """The model answered, but not in the structured format we asked for."""
+    if isinstance(exc, BadOutputError):
+        return True
+    name = type(exc).__name__
+    text = str(exc).lower()
+    return name in {"ValidationError", "OutputParserException", "JSONDecodeError"} or any(
+        k in text for k in (
+            "tool_use_failed", "did not call a tool", "failed_generation",
+            "json_validate_failed", "failed to parse", "validation error", "invalid json",
+        )
+    )
+
+
 def is_rate_limit(exc: Exception) -> bool:
     text = str(exc).lower()
     return "rate limit" in text or "rate_limit" in text or "429" in text or "too many requests" in text
@@ -66,13 +84,13 @@ def call_with_retry(
 
 
 def call_with_fallback(models: Sequence[str], make_call: Callable[[str], T]) -> T:
-    """Try each model in order, moving on only if a model is retired or unavailable."""
+    """Try each model in order, moving on if a model is retired, unavailable, or keeps giving bad output."""
     last_exc: Exception | None = None
     for model in models:
         try:
             return make_call(model)
         except Exception as exc:  # noqa: BLE001
-            if is_model_unavailable(exc):
+            if is_model_unavailable(exc) or isinstance(exc, BadOutputError):
                 logger.warning("Model %s unavailable, trying next: %s", model, exc)
                 last_exc = exc
                 continue

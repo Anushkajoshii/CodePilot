@@ -7,7 +7,7 @@ from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 
-from agent.codegen import RateLimitError, is_rate_limit
+from agent.codegen import BadOutputError, RateLimitError, is_rate_limit
 from agent.graph import MAX_IMPLEMENTATION_STEPS, build_agent, init_project_root
 from agent.preview import preview_html, zip_bytes
 
@@ -170,6 +170,9 @@ def friendly_error(exc: Exception) -> str:
                 "or try a smaller idea. The examples tab works without any key.")
     if "invalid api key" in text or "401" in text or "authentication" in text:
         return "That Groq API key didn't work. Please check it and try again."
+    if isinstance(exc, BadOutputError) or "no available model" in text:
+        return ("The AI models kept answering in the wrong format this time. Please try again; "
+                "a shorter, simpler idea usually works.")
     if "no available model" in text:
         return "None of the configured Groq models are available right now. Please try again later."
     return "Something went wrong while generating the project. Please try again with a shorter, clearer idea."
@@ -265,7 +268,7 @@ def main():
             with st.status("Starting the agents...", expanded=True) as status:
                 def on_event(kind, detail):
                     status.update(label=detail)
-                    st.write(("⏳ " if kind == "waiting" else "✅ ") + detail)
+                    st.write({"waiting": "⏳ ", "retry": "🔁 "}.get(kind, "✅ ") + detail)
 
                 try:
                     agent = build_agent(api_key, on_event=on_event)

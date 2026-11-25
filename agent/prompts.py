@@ -13,6 +13,7 @@ Rules:
 - Use plain HTML, CSS and JavaScript with no build step, unless the user clearly asks for another stack.
 - Use at most {max_files} files. Put the page in index.html.
 - Every feature you list must be implemented by the planned files.
+- Keep it short: a one-line description, at most 8 features, one short purpose per file.
 
 User idea:
 {user_prompt}"""
@@ -26,6 +27,7 @@ Rules:
 - In each task, name the exact element IDs, CSS classes, functions and variables the file must define or use,
   so that all files agree with each other.
 - Each task must say which features from the plan it implements.
+- Keep each task_description under 150 words. Do not write any code in the tasks.
 
 Plan:
 {plan_json}"""
